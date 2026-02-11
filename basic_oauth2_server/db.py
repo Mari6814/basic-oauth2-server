@@ -101,8 +101,28 @@ class Client(Base):
 
 
 def get_engine(db_path: str):
-    """Create a SQLAlchemy engine for the given database path."""
-    return create_engine(f"sqlite:///{db_path}", echo=False)
+    """Create a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
+    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+
+    # Apply connection-level pragmas for SQLite to improve safety and performance.
+    if engine.dialect.name == "sqlite":
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            # enforce foreign key constraints
+            cursor.execute("PRAGMA foreign_keys = ON")
+            # use WAL for better concurrency
+            cursor.execute("PRAGMA journal_mode = WAL")
+            # reasonable durability vs performance
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            # keep temp tables in memory
+            cursor.execute("PRAGMA temp_store = MEMORY")
+            # avoid immediate "database is locked" failures
+            cursor.execute("PRAGMA busy_timeout = 5000")
+            cursor.close()
+
+    return engine
 
 
 def init_db(db_path: str) -> None:
