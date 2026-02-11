@@ -1,6 +1,6 @@
 [project]
 name = "basic-oauth2-server"
-version = "0.1.1"
+version = "0.1.2"
 description = "A simple OAuth 2.0 client credentials server for testing and development"
 readme = "README.md"
 requires-python = ">=3.12"
