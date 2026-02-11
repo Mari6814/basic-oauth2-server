@@ -117,6 +117,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "jws-algorithms" },
+    { name = "python-multipart" },
     { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
@@ -139,6 +140,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.128.5" },
     { name = "gradio", marker = "extra == 'admin'", specifier = ">=6.5.1" },
     { name = "jws-algorithms", specifier = ">=1.2.2" },
+    { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
