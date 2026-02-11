@@ -1,0 +1,46 @@
+[project]
+name = "basic-oauth2-server"
+version = "0.1.0"
+description = "A simple OAuth 2.0 client credentials server for testing and development"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=45.0.0",
+    "fastapi>=0.128.5",
+    "jws-algorithms>=1.2.2",
+    "sqlalchemy>=2.0.46",
+    "uvicorn>=0.40.0",
+]
+authors = [
+    { name = "Marian Plivelic", email = "marianplivelic@gmail.com" },
+]
+keywords = ["oauth2", "server", "fastapi", "python"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Framework :: FastAPI",
+    "Topic :: Security :: Cryptography",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+
+[project.optional-dependencies]
+admin = ["gradio>=6.5.1"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+]
+
+
+[project.scripts]
+basic-oauth2-server = "basic_oauth_server.cli:main"
+
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]
+ignore = ["E501", "C901"]

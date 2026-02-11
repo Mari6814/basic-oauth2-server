@@ -1,0 +1,22 @@
+.*
+!.gitignore
+!.github
+.github/*
+!.github/workflows
+!.github/workflows/**
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
