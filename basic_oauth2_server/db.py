@@ -4,7 +4,7 @@ import hashlib
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text, create_engine
+from sqlalchemy import DateTime, String, Text, create_engine, Index, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from basic_oauth2_server.config import get_app_key
@@ -24,7 +24,7 @@ class Client(Base):
 
     __tablename__ = "clients"
 
-    client_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
     # SHA256 hash of client secret - the "password" used to obtain access tokens
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Algorithm to use for signing (HS256, RS256, EdDSA, etc.)
@@ -98,6 +98,10 @@ class Client(Base):
         if not self.client_secret:
             return None
         return f"{self.client_secret[:12]}..."
+
+
+# explicit unique index on client_id (redundant with PK but makes intent clear)
+Index("ix_clients_client_id", Client.client_id, unique=True)
 
 
 def get_engine(db_path: str):
