@@ -269,11 +269,10 @@ Configuration can be provided via CLI arguments or environment variables. CLI ar
 
 The `APP_KEY` environment variable is required for encrypting sensitive data (such as HMAC signing secrets) before storing them in the SQLite database. Client secrets are stored as SHA256 hashes. This key should be a secure, random string.
 
-Generate a key:
+Generate a key using openssl:
 
 ```bash
-# Generate a 32-byte base64-encoded key
-python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+openssl rand -base64 32
 ```
 
 Set it before running any command:
