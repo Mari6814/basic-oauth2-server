@@ -36,3 +36,13 @@ jobs:
               env:
                   APP_KEY: "R+uFAysFd4+DZ9Uq0mYTzyI/1dwcWudqJsNG330M2tE="
               run: pytest
+
+    deploy-test:
+        name: Mark test environment as deployed
+        needs: test
+        runs-on: ubuntu-latest
+        environment:
+            name: test
+        steps:
+            - name: Mark test environment as successful
+              run: echo "Tests passed, marking test environment as deployed."
