@@ -54,3 +54,9 @@ def test_parse_secret_file_not_found() -> None:
     """Test that missing file raises an error."""
     with pytest.raises(FileNotFoundError):
         parse_secret("@/nonexistent/path/to/secret.txt")
+
+
+def test_reject_file_secrets_when_not_allowed() -> None:
+    """Test that file secrets are rejected when allow_from_file is False."""
+    with pytest.raises(ValueError, match="Reading secrets from files is not allowed"):
+        parse_secret("@somefile.txt", allow_from_file=False)

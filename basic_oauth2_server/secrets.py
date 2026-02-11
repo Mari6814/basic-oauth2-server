@@ -11,7 +11,7 @@ import base64
 from pathlib import Path
 
 
-def parse_secret(value: str) -> bytes:
+def parse_secret(value: str, allow_from_file: bool = True) -> bytes:
     """Parse a secret value from various formats.
 
     Args:
@@ -20,15 +20,20 @@ def parse_secret(value: str) -> bytes:
             - base64:... - Base64 encoded value
             - 0x... - Hexadecimal encoded value
             - (anything else) - Plain text
+        allow_from_file: Whether to allow reading secrets from files (default: True).
 
     Returns:
         The decoded secret as bytes.
 
     Raises:
         FileNotFoundError: If @ prefix is used but file doesn't exist.
-        ValueError: If base64 or hex decoding fails.
+        ValueError: If base64 or hex decoding fails, or if file reading is not allowed.
     """
     if value.startswith("@"):
+        if not allow_from_file:
+            raise ValueError(
+                "Reading secrets from files is not allowed in this context"
+            )
         # File path
         file_path = Path(value[1:])
         return file_path.read_bytes().strip()
