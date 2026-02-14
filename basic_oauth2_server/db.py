@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 
 from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
+from basic_oauth2_server.secrets import parse_secret
 
 logger = logging.getLogger(__name__)
 
@@ -79,14 +80,11 @@ class Client(Base):
         return [a.strip() for a in self.audiences.split(",") if a.strip()]
 
     def get_signing_secret_fingerprint(self) -> str | None:
-        """Return a short SHA256 fingerprint for the signing secret with prefix.
-
-        Example: "sha256:012345..." (16 hex characters shown after the prefix).
-        """
+        """Return a short SHA256 fingerprint for the signing secret with prefix."""
         secret = self.get_signing_secret()
         if not secret:
             return None
-        return f"sha256:{hashlib.sha256(secret).hexdigest()[:16]}..."
+        return f"sha256:{hashlib.sha256(secret).hexdigest()}"
 
     def get_secret_fingerprint(self) -> str | None:
         """Return the full SHA256 fingerprint of the client secret with prefix.
