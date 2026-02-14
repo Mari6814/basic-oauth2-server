@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from datetime import datetime, timezone
+from typing import NewType
 
 from sqlalchemy import DateTime, String, Text, create_engine, Index, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -11,6 +12,9 @@ from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
 
 logger = logging.getLogger(__name__)
+
+# Newtype for database filesystem path (distinct type for type-checkers)
+DatabasePath = NewType("DatabasePath", str)
 
 
 class Base(DeclarativeBase):
@@ -129,10 +133,15 @@ def get_engine(db_path: str):
     return engine
 
 
-def init_db(db_path: str) -> None:
-    """Initialize the database, creating tables if needed."""
-    engine = get_engine(db_path)
+def init_db(db_path: str) -> DatabasePath:
+    """Initialize the database, creating tables if needed and return the DatabasePath.
+
+    Accepts either a plain string or a DatabasePath and returns a `DatabasePath`
+    to make the "newtype" available to callers/type-checkers.
+    """
+    engine = get_engine(str(db_path))
     Base.metadata.create_all(engine)
+    return DatabasePath(str(db_path))
 
 
 def get_session(db_path: str) -> Session:
