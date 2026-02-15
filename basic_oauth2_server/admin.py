@@ -1,7 +1,6 @@
 """Gradio admin dashboard for managing OAuth clients."""
 
 import base64
-from email.mime import base
 import secrets
 import uuid
 
@@ -83,7 +82,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 a.strip() for a in audiences.split(",") if a.strip()
             ] or None
 
-            client = create_client(
+            _client = create_client(
                 db_path=config.db_path,
                 client_id=client_id,
                 client_secret=client_secret_bytes,
