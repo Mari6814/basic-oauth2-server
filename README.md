@@ -153,15 +153,15 @@ basic-oauth2-server clients list
 basic-oauth2-server clients delete --client-id my-service
 ```
 
-| Option             | Description                                                                                                 |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `--db`             | Path to SQLite database (default: `./oauth.db`)                                                             |
-| `--client-id`      | Client identifier                                                                                           |
-| `--client-secret`  | Client secret (password for obtaining tokens). Stored as SHA256 hash                                        |
-| `--algorithm`      | Signing algorithm: `HS256`, `HS384`, `HS512`, `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `EdDSA` |
-| `--signing-secret` | Signing secret for HMAC algorithms (auto-generated if not provided for HS256/384/512)                       |
-| `--scopes`         | Allowed scopes for this client (comma-separated). Required if client will request scopes                    |
-| `--audiences`      | Allowed audiences for this client (comma-separated). Required if client will request audiences              |
+| Option             | Description                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------- |
+| `--db`             | Path to SQLite database (default: `./oauth.db`)                                       |
+| `--client-id`      | Client identifier                                                                     |
+| `--client-secret`  | Client secret (password for obtaining tokens). Stored as SHA256 hash                  |
+| `--algorithm`      | Signing algorithm: `HS*`, `RS*`, `PS*`, `ES*`, or `EdDSA`                             |
+| `--signing-secret` | Signing secret for HMAC algorithms (auto-generated if not provided for HS256/384/512) |
+| `--scope`          | Add allowed scope. Can be used multiple times.                                        |
+| `--audience`       | Add allowed audience. Can be used multiple times.                                     |
 
 ### Secret Formats
 
@@ -229,9 +229,11 @@ Request a new access token.
 | --------------- | -------- | ---------------------------------------- |
 | `grant_type`    | Yes      | Must be `client_credentials`             |
 | `client_id`     | Yes      | The client identifier                    |
-| `client_secret` | Yes      | The client secret                        |
+| `client_secret` | Yes      | The client secret in base64              |
 | `scope`         | No       | Space-separated list of requested scopes |
 | `audience`      | No       | Intended audience for the token          |
+
+The parameters `client_id` and `client_secret` can also be provided via HTTP Basic Authentication header instead of the request body.
 
 **Success Response (200 OK):**
 
@@ -298,7 +300,7 @@ basic-oauth2-server serve
 
 ## Examples
 
-### Development Setup with HMAC
+### Setup with HMAC
 
 ```bash
 # Create a client with HMAC signing
@@ -311,12 +313,13 @@ basic-oauth2-server clients create \
 basic-oauth2-server serve
 
 # Get a token
-curl -X POST http://localhost:8080/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials&client_id=dev-client&client_secret=dev-secret"
+curl http://localhost:8080/oauth/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=dev-client" \
+  -d "client_secret=" $(echo -n "dev-secret" | base64)
 ```
 
-### Production-like Setup with RSA
+### Setup with RSA
 
 ```bash
 # Generate an RSA private key
@@ -327,8 +330,8 @@ basic-oauth2-server clients create \
   --client-id prod-service \
   --client-secret prod-secret \
   --algorithm RS256 \
-  --scopes "read,write,admin" \
-  --audiences "https://api.example.com"
+  --scope "read,write,admin" \
+  --audience "https://api.example.com"
 
 # Start the server with the RSA private key
 basic-oauth2-server serve --rsa-private-key @private.pem
