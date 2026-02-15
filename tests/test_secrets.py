@@ -60,3 +60,27 @@ def test_reject_file_secrets_when_not_allowed() -> None:
     """Test that file secrets are rejected when allow_from_file is False."""
     with pytest.raises(ValueError, match="Reading secrets from files is not allowed"):
         parse_secret("@somefile.txt", allow_from_file=False)
+
+
+def test_parse_secret_empty_hex() -> None:
+    """Test that empty hex value raises an error."""
+    with pytest.raises(ValueError, match="Invalid hex encoding"):
+        parse_secret("0x")
+
+
+def test_parse_secret_empty_base64() -> None:
+    """Test that empty base64 value raises an error."""
+    with pytest.raises(ValueError, match="Invalid base64 encoding"):
+        parse_secret("base64:")
+
+
+def test_parse_secret_hex_prefix() -> None:
+    """Test that hex: prefix is accepted for hex-encoded secrets."""
+    result = parse_secret("hex:deadbeef")
+    assert result == bytes.fromhex("deadbeef")
+
+
+def test_parse_secret_hex_prefix_invalid() -> None:
+    """Test that invalid hex with hex: prefix raises an error."""
+    with pytest.raises(ValueError, match="Invalid hex encoding"):
+        parse_secret("hex:notvalidhex")
