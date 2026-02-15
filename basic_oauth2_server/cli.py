@@ -32,7 +32,7 @@ def main(args: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--app-url",
-        default=os.environ.get("APP_URL", "http://localhost"),
+        default=os.environ.get("APP_URL", "http://localhost:8080"),
         help="Issuer URL for JWT 'iss' claim (e.g., https://auth.example.com)",
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
