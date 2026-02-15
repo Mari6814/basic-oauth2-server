@@ -1,21 +1,15 @@
 """Database models and operations using SQLAlchemy."""
 
 import hashlib
-import logging
 from datetime import datetime, timezone
-from typing import NewType
+import secrets
 
 from sqlalchemy import DateTime, String, Text, create_engine, Index, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
-from basic_oauth2_server.secrets import parse_secret
-
-logger = logging.getLogger(__name__)
-
-# Newtype for database filesystem path (distinct type for type-checkers)
-DatabasePath = NewType("DatabasePath", str)
+from basic_oauth2_server.jwt import Algorithm
 
 
 class Base(DeclarativeBase):
@@ -30,7 +24,7 @@ class Client(Base):
     __tablename__ = "clients"
 
     client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
-    # SHA256 hash of client secret - the "password" used to obtain access tokens
+    # SHA256 hexdigest of client secret - the "password" used to obtain access tokens
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Algorithm to use for signing (HS256, RS256, EdDSA, etc.)
     # The client chooses based on their verification capabilities
@@ -44,14 +38,15 @@ class Client(Base):
     # Timestamp of last token issuance
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    def verify_secret(self, secret: bytes | str) -> bool:
+    def verify_client_secret(self, user_secret: bytes) -> bool:
         """Verify that the provided secret matches the stored hash."""
         if not self.client_secret:
             return False
-        if isinstance(secret, str):
-            secret = secret.encode("utf-8")
-        provided_hash = hashlib.sha256(secret).hexdigest()
-        return self.client_secret == provided_hash
+        if secrets.compare_digest(
+            self.client_secret, hashlib.sha256(user_secret).hexdigest()
+        ):
+            return True
+        return False
 
     def set_secret(self, secret: bytes) -> None:
         """Hash and store the client secret using SHA256."""
@@ -86,24 +81,25 @@ class Client(Base):
             return None
         return f"sha256:{hashlib.sha256(secret).hexdigest()}"
 
-    def get_secret_fingerprint(self) -> str | None:
-        """Return the full SHA256 fingerprint of the client secret with prefix.
-
-        Example: "sha256:012345..." (full 64 hex characters after the prefix).
-        """
-        if not self.client_secret:
-            return None
-        return f"sha256:{self.client_secret}"
-
-    def get_secret_hash_truncated(self) -> str | None:
-        """Get the first 12 characters of the client secret hash for compact views."""
-        if not self.client_secret:
-            return None
-        return f"{self.client_secret[:12]}..."
-
 
 # explicit unique index on client_id (redundant with PK but makes intent clear)
 Index("ix_clients_client_id", Client.client_id, unique=True)
+
+
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    """Event handler for sqlalchemy engine connect event to set SQLite pragmas for better performance and safety."""
+    cursor = dbapi_connection.cursor()
+    # enforce foreign key constraints
+    cursor.execute("PRAGMA foreign_keys = ON")
+    # use WAL for better concurrency
+    cursor.execute("PRAGMA journal_mode = WAL")
+    # reasonable durability vs performance
+    cursor.execute("PRAGMA synchronous = NORMAL")
+    # keep temp tables in memory
+    cursor.execute("PRAGMA temp_store = MEMORY")
+    # avoid immediate "database is locked" failures
+    cursor.execute("PRAGMA busy_timeout = 5000")
+    cursor.close()
 
 
 def get_engine(db_path: str):
@@ -112,34 +108,15 @@ def get_engine(db_path: str):
 
     # Apply connection-level pragmas for SQLite to improve safety and performance.
     if engine.dialect.name == "sqlite":
-
-        @event.listens_for(engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection, connection_record):
-            cursor = dbapi_connection.cursor()
-            # enforce foreign key constraints
-            cursor.execute("PRAGMA foreign_keys = ON")
-            # use WAL for better concurrency
-            cursor.execute("PRAGMA journal_mode = WAL")
-            # reasonable durability vs performance
-            cursor.execute("PRAGMA synchronous = NORMAL")
-            # keep temp tables in memory
-            cursor.execute("PRAGMA temp_store = MEMORY")
-            # avoid immediate "database is locked" failures
-            cursor.execute("PRAGMA busy_timeout = 5000")
-            cursor.close()
+        event.listens_for(engine, "connect")(_set_sqlite_pragma)
 
     return engine
 
 
-def init_db(db_path: str) -> DatabasePath:
-    """Initialize the database, creating tables if needed and return the DatabasePath.
-
-    Accepts either a plain string or a DatabasePath and returns a `DatabasePath`
-    to make the "newtype" available to callers/type-checkers.
-    """
+def init_db(db_path: str):
+    """Initialize the database, creating tables if needed."""
     engine = get_engine(str(db_path))
     Base.metadata.create_all(engine)
-    return DatabasePath(str(db_path))
 
 
 def get_session(db_path: str) -> Session:
@@ -151,7 +128,6 @@ def get_session(db_path: str) -> Session:
 
 def get_client(db_path: str, client_id: str) -> Client | None:
     """Retrieve a client by ID."""
-    logger.debug("Retrieving client: %s", client_id)
     with get_session(db_path) as session:
         return session.get(Client, client_id)
 
@@ -159,8 +135,8 @@ def get_client(db_path: str, client_id: str) -> Client | None:
 def create_client(
     db_path: str,
     client_id: str,
-    secret: bytes | None = None,
-    algorithm: str = "HS256",
+    algorithm: Algorithm,
+    client_secret: bytes | None = None,
     signing_secret: bytes | None = None,
     scopes: list[str] | None = None,
     audiences: list[str] | None = None,
@@ -180,19 +156,18 @@ def create_client(
     with get_session(db_path) as session:
         client = Client(
             client_id=client_id,
-            algorithm=algorithm,
+            algorithm=algorithm.name,
             scopes=",".join(scopes) if scopes else None,
             audiences=",".join(audiences) if audiences else None,
         )
-        if secret:
-            client.set_secret(secret)
+        if client_secret:
+            client.set_secret(client_secret)
         if signing_secret:
             client.set_signing_secret(signing_secret)
 
         session.add(client)
         session.commit()
         session.refresh(client)
-        logger.info("Created client: %s with algorithm %s", client_id, algorithm)
         return client
 
 
@@ -203,7 +178,6 @@ def touch_client_last_used(db_path: str, client_id: str) -> None:
         if client:
             client.last_used_at = datetime.now(timezone.utc)
             session.commit()
-            logger.debug("Updated last_used_at for client: %s", client_id)
 
 
 def list_clients(db_path: str) -> list[Client]:
@@ -220,7 +194,5 @@ def delete_client(db_path: str, client_id: str) -> bool:
         if client:
             session.delete(client)
             session.commit()
-            logger.info("Deleted client: %s", client_id)
             return True
-        logger.warning("Client not found for deletion: %s", client_id)
         return False

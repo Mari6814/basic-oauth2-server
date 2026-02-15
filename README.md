@@ -50,11 +50,21 @@ basic-oauth2-server serve --port 8080 --host localhost
 
 ### 3. Request a token
 
+#### Using urlencoded form data:
+
 ```bash
 curl -X POST http://localhost:8080/oauth/token \
   -d "grant_type=client_credentials" \
   -d "client_id=my-app" \
   -d "client_secret=my-secret"
+```
+
+#### Using Basic Auth header:
+
+```bash
+curl http://localhost:8080/oauth/token \
+  -u "my-app:my-secret" \
+  -d "grant_type=client_credentials"
 ```
 
 ## CLI Commands
@@ -107,7 +117,9 @@ basic-oauth2-server clients create \
   --client-id my-service \
   --client-secret supersecret \
   --algorithm HS256
-# Output: Generated signing secret: <base64-encoded-secret>
+# Output:
+# JWT_ALGORITHM=HS256
+# JWT_SECRET=xxxx
 
 # Or provide your own signing secret
 basic-oauth2-server clients create \
@@ -155,12 +167,12 @@ basic-oauth2-server clients delete --client-id my-service
 
 The `--client-secret`, `--signing-secret`, and private key options all accept values in these formats:
 
-| Prefix    | Format      | Example                |
-| --------- | ----------- | ---------------------- |
-| `@`       | File path   | `@/path/to/secret.txt` |
-| `base64:` | Base64      | `base64:c2VjcmV0...`   |
-| `0x`      | Hexadecimal | `0xdeadbeef1234...`    |
-| (none)    | Plain text  | `my-secret`            |
+| Prefix       | Format      | Example                |
+| ------------ | ----------- | ---------------------- |
+| `@`          | File path   | `@/path/to/secret.txt` |
+| `base64:`    | Base64      | `base64:c2VjcmV0...`   |
+| `hex:`, `0x` | Hexadecimal | `0xdeadbeef1234...`    |
+| (none)       | Plain text  | `my-secret`            |
 
 Examples:
 

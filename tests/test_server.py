@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from collections.abc import Generator
 
+from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,7 +21,7 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     db_path = tmp_path / "test_oauth.db"
 
     # Set APP_KEY for encryption
-    os.environ["APP_KEY"] = "dGVzdGtleTEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNA=="
+    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890").decode()
 
     init_db(str(db_path))
     yield str(db_path)
@@ -33,8 +34,8 @@ def client_with_db(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="test-client",
-        secret=b"test-secret",
-        algorithm="HS256",
+        client_secret=b"test-secret",
+        algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"test-signing-secret-1234567890",
         scopes=["read", "write"],
         audiences=["https://api.test.com"],
@@ -49,6 +50,11 @@ def client_with_db(temp_db: str) -> TestClient:
     return TestClient(app)
 
 
+def b64(s: str) -> str:
+    """Transforms any string into its base64 representation decoded as UTF-8."""
+    return base64.b64encode(s.encode()).decode()
+
+
 def test_token_endpoint_success(client_with_db: TestClient) -> None:
     """Test successful token request."""
     response = client_with_db.post(
@@ -56,7 +62,7 @@ def test_token_endpoint_success(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
         },
     )
 
@@ -74,7 +80,7 @@ def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
             "scope": "read write",
         },
     )
@@ -90,8 +96,8 @@ def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
     create_client(
         db_path=temp_db,
         client_id="subset-client",
-        secret=b"subset-secret",
-        algorithm="HS256",
+        client_secret=b"subset-secret",
+        algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"subset-signing-secret-000",
         scopes=["read", "write", "admin"],
     )
@@ -105,7 +111,7 @@ def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "subset-client",
-            "client_secret": "subset-secret",
+            "client_secret": b64("subset-secret"),
             "scope": "read write",
         },
     )
@@ -122,7 +128,7 @@ def test_token_endpoint_invalid_scope(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
             "scope": "admin",
         },
     )
@@ -139,7 +145,7 @@ def test_token_endpoint_invalid_client(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "nonexistent",
-            "client_secret": "wrong",
+            "client_secret": b64("wrong"),
         },
     )
 
@@ -155,7 +161,7 @@ def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "wrong-secret",
+            "client_secret": b64("wrong-secret"),
         },
     )
 
@@ -171,7 +177,7 @@ def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> No
         data={
             "grant_type": "authorization_code",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
         },
     )
 
@@ -187,7 +193,7 @@ def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
             "audience": "https://api.test.com",
         },
     )
@@ -201,8 +207,8 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     create_client(
         db_path=temp_db,
         client_id="audience-client",
-        secret=b"audience-secret",
-        algorithm="HS256",
+        client_secret=b"audience-secret",
+        algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"audience-signing-secret-000",
         audiences=["https://api.a.example", "https://api.b.example"],
     )
@@ -216,7 +222,7 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "audience-client",
-            "client_secret": "audience-secret",
+            "client_secret": b64("audience-secret"),
             "audience": "https://api.b.example",
         },
     )
@@ -238,14 +244,14 @@ def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "test-secret",
+            "client_secret": b64("test-secret"),
             "audience": "https://wrong.com",
         },
     )
 
     assert response.status_code == 400
     data = response.json()
-    assert data["error"] == "invalid_target"
+    assert data["error"] == "invalid_audience"
 
 
 # Test keys directory
@@ -258,8 +264,8 @@ def client_with_rsa(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="rsa-client",
-        secret=b"rsa-secret",
-        algorithm="RS256",
+        client_secret=b"rsa-secret",
+        algorithm=AsymmetricAlgorithm.RS256,
     )
 
     config = ServerConfig(
@@ -278,8 +284,8 @@ def client_with_es256(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="es256-client",
-        secret=b"es256-secret",
-        algorithm="ES256",
+        client_secret=b"es256-secret",
+        algorithm=AsymmetricAlgorithm.ES256,
     )
 
     config = ServerConfig(
@@ -298,8 +304,8 @@ def client_with_es384(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="es384-client",
-        secret=b"es384-secret",
-        algorithm="ES384",
+        client_secret=b"es384-secret",
+        algorithm=AsymmetricAlgorithm.ES384,
     )
 
     config = ServerConfig(
@@ -318,8 +324,8 @@ def client_with_es512(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="es512-client",
-        secret=b"es512-secret",
-        algorithm="ES512",
+        client_secret=b"es512-secret",
+        algorithm=AsymmetricAlgorithm.ES512,
     )
 
     config = ServerConfig(
@@ -338,8 +344,8 @@ def client_with_eddsa(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="eddsa-client",
-        secret=b"eddsa-secret",
-        algorithm="EdDSA",
+        client_secret=b"eddsa-secret",
+        algorithm=AsymmetricAlgorithm.EdDSA,
     )
 
     config = ServerConfig(
@@ -359,7 +365,7 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "rsa-client",
-            "client_secret": "rsa-secret",
+            "client_secret": b64("rsa-secret"),
         },
     )
 
@@ -380,7 +386,7 @@ def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "es256-client",
-            "client_secret": "es256-secret",
+            "client_secret": b64("es256-secret"),
         },
     )
 
@@ -401,7 +407,7 @@ def test_token_es384_algorithm(client_with_es384: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "es384-client",
-            "client_secret": "es384-secret",
+            "client_secret": b64("es384-secret"),
         },
     )
 
@@ -422,7 +428,7 @@ def test_token_es512_algorithm(client_with_es512: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "es512-client",
-            "client_secret": "es512-secret",
+            "client_secret": b64("es512-secret"),
         },
     )
 
@@ -443,7 +449,7 @@ def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "eddsa-client",
-            "client_secret": "eddsa-secret",
+            "client_secret": b64("eddsa-secret"),
         },
     )
 
@@ -463,8 +469,8 @@ def client_with_key_id(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="kid-client",
-        secret=b"kid-secret",
-        algorithm="RS256",
+        client_secret=b"kid-secret",
+        algorithm=AsymmetricAlgorithm.RS256,
     )
 
     config = ServerConfig(
@@ -485,7 +491,7 @@ def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "kid-client",
-            "client_secret": "kid-secret",
+            "client_secret": b64("kid-secret"),
         },
     )
 
@@ -506,8 +512,8 @@ def client_with_issuer(temp_db: str) -> TestClient:
     create_client(
         db_path=temp_db,
         client_id="issuer-client",
-        secret=b"issuer-secret",
-        algorithm="HS256",
+        client_secret=b"issuer-secret",
+        algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"issuer-signing-secret-1234567890",
     )
 
@@ -528,7 +534,7 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
         data={
             "grant_type": "client_credentials",
             "client_id": "issuer-client",
-            "client_secret": "issuer-secret",
+            "client_secret": b64("issuer-secret"),
         },
     )
 
@@ -547,7 +553,9 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
 def test_token_endpoint_basic_auth(client_with_db: TestClient) -> None:
     """Test successful token request using HTTP Basic auth."""
 
-    credentials = base64.b64encode(b"test-client:dGVzdC1zZWNyZXQ=").decode()
+    credentials = base64.b64encode(
+        f"test-client:{b64('test-secret')}".encode()
+    ).decode()
     response = client_with_db.post(
         "/oauth/token",
         data={"grant_type": "client_credentials"},
@@ -563,7 +571,9 @@ def test_token_endpoint_basic_auth(client_with_db: TestClient) -> None:
 def test_token_endpoint_basic_auth_invalid_secret(client_with_db: TestClient) -> None:
     """Test Basic auth with wrong secret."""
 
-    credentials = base64.b64encode(b"test-client:d3Jvbmctc2VjcmV0").decode()
+    credentials = base64.b64encode(
+        f"test-client:{b64('wrong-secret')}".encode()
+    ).decode()
     response = client_with_db.post(
         "/oauth/token",
         data={"grant_type": "client_credentials"},
@@ -577,7 +587,9 @@ def test_token_endpoint_basic_auth_invalid_secret(client_with_db: TestClient) ->
 def test_token_endpoint_basic_auth_unknown_client(client_with_db: TestClient) -> None:
     """Test Basic auth with unknown client."""
 
-    credentials = base64.b64encode(b"unknown-client:c29tZS1zZWNyZXQ=").decode()
+    credentials = base64.b64encode(
+        f"unknown-client:{b64('some-secret')}".encode()
+    ).decode()
     response = client_with_db.post(
         "/oauth/token",
         data={"grant_type": "client_credentials"},
@@ -592,13 +604,15 @@ def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
     """Test that Basic auth takes priority over form credentials."""
 
     # Provide correct credentials in header, wrong in form
-    credentials = base64.b64encode(b"test-client:dGVzdC1zZWNyZXQ=").decode()
+    credentials = base64.b64encode(
+        f"test-client:{b64('test-secret')}".encode()
+    ).decode()
     response = client_with_db.post(
         "/oauth/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
-            "client_secret": "d3Jvbmctc2VjcmV0",
+            "client_secret": b64("wrong-secret"),
         },
         headers={"Authorization": f"Basic {credentials}"},
     )

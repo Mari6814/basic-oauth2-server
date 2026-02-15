@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import argparse
 import base64
-import logging
 import os
 import secrets
 import sys
+import uuid
 
-from basic_oauth2_server.db import create_client, get_client, init_db
-from basic_oauth2_server.jwt import get_algorithm, is_symmetric
-from basic_oauth2_server.secrets import parse_secret
+from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
+
+from basic_oauth2_server.db import create_client
 from basic_oauth2_server.db import list_clients
 from basic_oauth2_server.db import delete_client
-
-logger = logging.getLogger(__name__)
+from basic_oauth2_server.jwt import get_algorithm, is_symmetric
+from basic_oauth2_server.secrets import parse_secret
+from basic_oauth2_server.config import AdminConfig, ServerConfig
 
 
 def main(args: list[str] | None = None) -> int:
@@ -23,6 +24,16 @@ def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="basic-oauth2-server",
         description="Basic OAuth 2.0 Authorization Server",
+    )
+    parser.add_argument(
+        "--db",
+        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
+        help="Path to SQLite database (default: ./oauth.db)",
+    )
+    parser.add_argument(
+        "--app-url",
+        default=os.environ.get("APP_URL", "http://localhost"),
+        help="Issuer URL for JWT 'iss' claim (e.g., https://auth.example.com)",
     )
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
@@ -38,11 +49,6 @@ def main(args: list[str] | None = None) -> int:
         "--host",
         default=os.environ.get("OAUTH_HOST", "localhost"),
         help="Host to bind to (default: localhost)",
-    )
-    serve_parser.add_argument(
-        "--db",
-        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-        help="Path to SQLite database (default: ./oauth.db)",
     )
     serve_parser.add_argument(
         "--rsa-private-key",
@@ -94,11 +100,6 @@ def main(args: list[str] | None = None) -> int:
         default=os.environ.get("OAUTH_EDDSA_KEY_ID"),
         help="Key ID for EdDSA key (included in JWT header as 'kid')",
     )
-    serve_parser.add_argument(
-        "--app-url",
-        default=os.environ.get("APP_URL"),
-        help="Issuer URL for JWT 'iss' claim (e.g., https://auth.example.com)",
-    )
 
     # clients command
     clients_parser = subparsers.add_parser("clients", help="Manage OAuth clients")
@@ -108,13 +109,24 @@ def main(args: list[str] | None = None) -> int:
 
     # clients create
     create_parser = clients_subparsers.add_parser("create", help="Create a new client")
-    create_parser.add_argument("--client-id", required=True, help="Client identifier")
     create_parser.add_argument(
-        "--client-secret",
-        help="Client secret (password for obtaining tokens). Supports @file, base64:, 0x formats",
+        "-i",
+        "--id",
+        "--client-id",
+        dest="client_id",
+        help="Client identifier (auto-generated if omitted, and must be unique)",
     )
     create_parser.add_argument(
+        "-s",
+        "--client-secret",
+        dest="client_secret",
+        help="Client secret (password for obtaining tokens). Supports @file, base64:, 0x formats. If omitted, a random 32-byte secret will be generated.",
+    )
+    create_parser.add_argument(
+        "-a",
+        "--alg",
         "--algorithm",
+        dest="algorithm",
         default="HS256",
         choices=[alg.name for alg in SymmetricAlgorithm]
         + [alg.name for alg in AsymmetricAlgorithm],
@@ -122,37 +134,33 @@ def main(args: list[str] | None = None) -> int:
     )
     create_parser.add_argument(
         "--signing-secret",
-        help="Signing secret for HMAC algorithms (required for HS*). Supports @file, base64:, 0x formats",
+        dest="signing_secret",
+        help="Signing secret for HMAC algorithms (required for HS*). Supports @file, base64:, 0x formats. If omitted, a random 32-byte secret will be generated.",
     )
     create_parser.add_argument(
-        "--scopes",
-        help="Comma-separated list of allowed scopes",
+        "-c",
+        "--scope",
+        dest="scopes",
+        action="append",
+        help="Add scope to the client's allowed scopes (can be specified multiple times or as a comma-separated list)",
     )
     create_parser.add_argument(
-        "--audiences",
-        help="Comma-separated list of allowed audiences",
-    )
-    create_parser.add_argument(
-        "--db",
-        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-        help="Path to SQLite database",
+        "-u",
+        "--aud",
+        "--audience",
+        dest="audiences",
+        action="append",
+        help="Add allowed audience to the client's allowed audiences (can be specified multiple times or as a comma-separated list)",
     )
 
     # clients list
-    list_parser = clients_subparsers.add_parser("list", help="List all clients")
-    list_parser.add_argument(
-        "--db",
-        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-        help="Path to SQLite database",
-    )
+    _list_parser = clients_subparsers.add_parser("list", help="List all clients")
+    # TODO: Add filters?
 
     # clients delete
     delete_parser = clients_subparsers.add_parser("delete", help="Delete a client")
-    delete_parser.add_argument("--client-id", required=True, help="Client identifier")
     delete_parser.add_argument(
-        "--db",
-        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-        help="Path to SQLite database",
+        "-d", "--client-id", required=True, help="Client identifier"
     )
 
     # admin command
@@ -167,11 +175,6 @@ def main(args: list[str] | None = None) -> int:
         "--host",
         default=os.environ.get("OAUTH_ADMIN_HOST", "localhost"),
         help="Host to bind to (default: localhost)",
-    )
-    admin_parser.add_argument(
-        "--db",
-        default=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-        help="Path to SQLite database",
     )
 
     parsed = parser.parse_args(args)
@@ -192,7 +195,6 @@ def main(args: list[str] | None = None) -> int:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     """Handle the 'serve' command."""
-    from basic_oauth2_server.config import ServerConfig
     from basic_oauth2_server.server import run_server
 
     config = ServerConfig(
@@ -224,7 +226,16 @@ def _cmd_clients(args: argparse.Namespace) -> int:
         return 1
 
     if args.clients_command == "create":
-        return _cmd_clients_create(args)
+        create_args = ClientCreateArgs(
+            client_id=args.client_id,
+            client_secret=args.client_secret,
+            algorithm=args.algorithm,
+            signing_secret=args.signing_secret,
+            scopes=args.scopes,
+            audiences=args.audiences,
+            db=args.db,
+        )
+        return _cmd_clients_create(create_args)
     elif args.clients_command == "list":
         return _cmd_clients_list(args)
     elif args.clients_command == "delete":
@@ -233,56 +244,65 @@ def _cmd_clients(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_clients_create(args: argparse.Namespace) -> int:
+# Define namespace with proper types for client creation arguments
+class ClientCreateArgs(argparse.Namespace):
+    client_id: str | None
+    client_secret: str | None
+    algorithm: str
+    signing_secret: str | None
+    scopes: list[str] | None
+    audiences: list[str] | None
+    db: str
+
+
+def _cmd_clients_create(args: ClientCreateArgs) -> int:
     """Handle 'clients create' command."""
-    init_db(args.db)
 
-    # Check if client already exists
-    existing = get_client(args.db, args.client_id)
-    if existing:
-        print(f"Error: Client '{args.client_id}' already exists", file=sys.stderr)
-        return 1
+    algorithm = get_algorithm(args.algorithm) or SymmetricAlgorithm.HS256
 
-    algorithm = args.algorithm
-    signing_secret: bytes | None = None
-    generated_signing_secret: str | None = None
+    client_secret = (
+        parse_secret(args.client_secret)
+        if args.client_secret
+        else secrets.token_bytes(32)
+    )
 
-    # For symmetric algorithms, auto-generate signing secret if not provided
-    if is_symmetric(get_algorithm(algorithm)):
-        if args.signing_secret:
-            signing_secret = parse_secret(args.signing_secret)
-        else:
-            # Auto-generate a 32-byte signing secret
-            signing_secret = secrets.token_bytes(32)
-            generated_signing_secret = base64.b64encode(signing_secret).decode()
-            logger.info("Auto-generated signing secret for client: %s", args.client_id)
+    signing_secret = (
+        (
+            parse_secret(args.signing_secret)
+            if args.signing_secret
+            else secrets.token_bytes(32)
+        )
+        if algorithm and is_symmetric(algorithm)
+        else None
+    )
 
-    secret: bytes | None = None
-    if args.client_secret:
-        secret = parse_secret(args.client_secret)
+    scopes = args.scopes or []
+    audiences = args.audiences or []
 
-    scopes = args.scopes.split(",") if args.scopes else None
-    audiences = args.audiences.split(",") if args.audiences else None
-
-    create_client(
+    client = create_client(
         db_path=args.db,
-        client_id=args.client_id,
-        secret=secret,
+        client_id=args.client_id or str(uuid.uuid4()),
+        client_secret=client_secret,
         algorithm=algorithm,
         signing_secret=signing_secret,
         scopes=scopes,
         audiences=audiences,
     )
 
-    print(f"Created client '{args.client_id}' with algorithm {algorithm}")
-    if generated_signing_secret:
-        print(f"Generated signing secret: {generated_signing_secret}")
+    print(f"OAUTH_CLIENT_ID={client.client_id}")
+    if not args.client_secret and client_secret:
+        # print if we auto-generated the client secret, but not if it was provided by the user
+        print(f"OAUTH_CLIENT_SECRET={base64.b64encode(client_secret).decode()}")
+    if is_symmetric(algorithm) and not args.signing_secret and signing_secret:
+        # print if we auto-generated the signing secret, but not if it was provided by the user
+        print(f"JWT_ALGORITHM={algorithm.name}")
+        print(f'JWT_SECRET="hex:{signing_secret.hex()}"')
+
     return 0
 
 
 def _cmd_clients_list(args: argparse.Namespace) -> int:
     """Handle 'clients list' command."""
-    init_db(args.db)
     clients = list_clients(args.db)
 
     if not clients:
@@ -290,22 +310,19 @@ def _cmd_clients_list(args: argparse.Namespace) -> int:
         return 0
 
     print(
-        f"{'Client ID':<20} {'Algorithm':<10} {'Secret Hash':<16} "
-        f"{'Signing FP':<18} {'Scopes':<15} {'Last Used'}"
+        f"{'Client ID':<36} {'Algorithm':<10} {'Scopes':<15} {'Audiences':<15} {'Last Used'}"
     )
-    print("-" * 110)
+    print("-" * (36 + 10 + 15 + 15 + 20 + 4))
     for client in clients:
-        scopes = client.scopes or ""
-        secret_hash = client.get_secret_hash_truncated() or "(none)"
-        signing_fp = client.get_signing_secret_fingerprint() or "(none)"
+        scopes = client.scopes or "(none)"
+        audiences = client.audiences or "(none)"
         last_used = (
             client.last_used_at.strftime("%Y-%m-%d %H:%M")
             if client.last_used_at
             else "(never)"
         )
         print(
-            f"{client.client_id:<20} {client.algorithm:<10} {secret_hash:<16} "
-            f"{signing_fp:<18} {scopes:<15} {last_used}"
+            f"{client.client_id:<36} {client.algorithm:<10} {scopes:<15} {audiences:<15} {last_used}"
         )
 
     return 0
@@ -333,9 +350,8 @@ def _cmd_admin(args: argparse.Namespace) -> int:
         )
         return 1
 
-    from basic_oauth2_server.config import AdminConfig
-
     config = AdminConfig(
+        app_url=args.app_url,
         host=args.host,
         port=args.port,
         db_path=args.db,

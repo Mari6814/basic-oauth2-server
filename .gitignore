@@ -9,6 +9,8 @@
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
 
 # Python-generated files
 __pycache__/
@@ -19,4 +21,4 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/

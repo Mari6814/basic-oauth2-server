@@ -51,6 +51,7 @@ class ServerConfig:
 class AdminConfig:
     """Configuration for the admin dashboard."""
 
+    app_url: str | None = None
     host: str = "localhost"
     port: int = 8081
     db_path: str = "./oauth.db"
@@ -59,6 +60,7 @@ class AdminConfig:
     def from_env(cls) -> Self:
         """Create configuration from environment variables."""
         return cls(
+            app_url=os.environ.get("APP_URL"),
             host=os.environ.get("OAUTH_ADMIN_HOST", "localhost"),
             port=int(os.environ.get("OAUTH_ADMIN_PORT", "8081")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),

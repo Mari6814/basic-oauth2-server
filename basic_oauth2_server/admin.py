@@ -1,8 +1,12 @@
 """Gradio admin dashboard for managing OAuth clients."""
 
 import base64
-import logging
+from email.mime import base
 import secrets
+import uuid
+
+from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
+from .secrets import parse_secret
 
 import gradio as gr
 
@@ -16,8 +20,6 @@ from basic_oauth2_server.db import (
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 
-logger = logging.getLogger(__name__)
-
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
     """Create the Gradio admin application."""
@@ -30,8 +32,6 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             [
                 c.client_id,
                 c.algorithm,
-                c.get_secret_fingerprint() or "-",
-                c.get_signing_secret_fingerprint() or "-",
                 c.scopes or "",
                 (
                     c.last_used_at.strftime("%Y-%m-%d %H:%M")
@@ -51,48 +51,76 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         audiences: str,
     ) -> tuple[str, list[list[str]]]:
         """Add a new client."""
+
         if not client_id:
-            return "Error: Client ID is required", refresh_clients()
+            raise ValueError("Client ID is required")
+
+        if not client_secret:
+            raise ValueError("Client secret is required")
+
+        client_secret_bytes = parse_secret(client_secret, allow_from_file=False)
+        if not client_secret_bytes:
+            raise ValueError("Client secret bytes cannot be empty")
+
+        if not algorithm:
+            raise ValueError("Algorithm is required")
+
+        algorithm_enum = get_algorithm(algorithm)
+        if is_symmetric(algorithm_enum) and not signing_secret:
+            raise ValueError(f"Signing secret is required for {algorithm}")
+
+        signing_secret_bytes: bytes | None = None
+        if signing_secret:
+            signing_secret_bytes = parse_secret(signing_secret, allow_from_file=False)
 
         existing = get_client(config.db_path, client_id)
         if existing:
             return f"Error: Client '{client_id}' already exists", refresh_clients()
 
         try:
-            secret_bytes: bytes | None = None
-            if client_secret:
-                # Client secret is entered as plain text
-                secret_bytes = client_secret.encode("utf-8")
-
-            # Validate signing secret for symmetric algorithms
-            signing_secret_bytes: bytes | None = None
-            if is_symmetric(get_algorithm(algorithm)):
-                if signing_secret:
-                    # Signing secret entered as plain text
-                    signing_secret_bytes = signing_secret.encode("utf-8")
-                else:
-                    return (
-                        f"Error: Signing secret is required for {algorithm}",
-                        refresh_clients(),
-                    )
-
             scopes_list = [s.strip() for s in scopes.split(",") if s.strip()] or None
             audiences_list = [
                 a.strip() for a in audiences.split(",") if a.strip()
             ] or None
 
-            create_client(
+            client = create_client(
                 db_path=config.db_path,
                 client_id=client_id,
-                secret=secret_bytes,
-                algorithm=algorithm,
+                client_secret=client_secret_bytes,
+                algorithm=algorithm_enum,
                 signing_secret=signing_secret_bytes,
                 scopes=scopes_list,
                 audiences=audiences_list,
             )
 
-            logger.info("Created client via admin: %s", client_id)
-            return f"Created client '{client_id}'", refresh_clients()
+            # Convert to base64 for example usage below. Reason: OAuth2 clients typically need to send the secret base64-encoded.
+            client_secret_base64 = base64.b64encode(client_secret_bytes).decode()
+
+            msg = "\n".join(
+                [
+                    "Environment variables to use this client:",
+                    "",
+                    f"OAUTH_CLIENT_ID={client_id}",
+                    f"OAUTH_CLIENT_SECRET={client_secret_base64}",
+                ]
+                + (
+                    [
+                        f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
+                        f"JWT_ALGORITHM={algorithm_enum.name}",
+                    ]
+                    if is_symmetric(algorithm_enum) and signing_secret_bytes
+                    else []
+                )
+                + [
+                    "",
+                    "Example curl command:",
+                    "",
+                    f"curl {config.app_url or 'APP_URL'}/oauth/token \\\n"
+                    f'\t-u "{client_id}:{client_secret_base64}" \\\n'
+                    f'\t-d "grant_type=client_credentials"',
+                ],
+            )
+            return msg, refresh_clients()
         except Exception as e:
             return f"Error: {e}", refresh_clients()
 
@@ -102,14 +130,13 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             return "Error: Client ID is required", refresh_clients()
 
         if delete_client(config.db_path, client_id):
-            logger.info("Deleted client via admin: %s", client_id)
             return f"Deleted client '{client_id}'", refresh_clients()
         else:
             return f"Error: Client '{client_id}' not found", refresh_clients()
 
     def generate_signing_secret() -> str:
         """Generate a new random signing secret."""
-        return base64.b64encode(secrets.token_bytes(32)).decode()
+        return f"base64:{base64.b64encode(secrets.token_bytes(32)).decode()}"
 
     with gr.Blocks(title="OAuth Admin Dashboard") as app:
         gr.Markdown("# OAuth Admin Dashboard")
@@ -120,8 +147,6 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 headers=[
                     "Client ID",
                     "Algorithm",
-                    "Fingerprint",
-                    "Signing Fingerprint",
                     "Scopes",
                     "Last used",
                 ],
@@ -134,26 +159,21 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         with gr.Tab("Add Client"):
             with gr.Row():
                 with gr.Column():
-                    new_client_id = gr.Textbox(label="Client ID", placeholder="my-app")
+                    new_client_id = gr.Textbox(
+                        value=str(uuid.uuid4()),
+                        label="Client ID",
+                        placeholder="my-app",
+                    )
                     new_client_secret = gr.Textbox(
+                        value=f"base64:{base64.b64encode(secrets.token_bytes(32)).decode()}",
                         label="Client Secret",
                         placeholder="Enter plain-text secret",
-                        info='Used as the "password" for authenticating with this client.',
+                        info='Used as the "password" for authenticating with this client. Use prefix `base64:`, `0x`, or `hex:` for different encodings. Uses utf-8 encoding by default. Note the OAuth2 requires you to send it base64-encoded!',
                     )
                     new_algorithm = gr.Dropdown(
                         label="Algorithm",
-                        choices=[
-                            "HS256",
-                            "HS384",
-                            "HS512",
-                            "RS256",
-                            "RS384",
-                            "RS512",
-                            "ES256",
-                            "ES384",
-                            "ES512",
-                            "EdDSA",
-                        ],
+                        choices=[alg.name for alg in SymmetricAlgorithm]
+                        + [alg.name for alg in AsymmetricAlgorithm],
                         value="HS256",
                         info="JWT signing algorithm the client wants",
                     )
@@ -161,7 +181,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         label="Signing Secret (required for HS* algorithms)",
                         placeholder="Click 'Generate' or enter your own",
                         value=generate_signing_secret(),
-                        info="Used to sign JWTs. Required for HS256/384/512. Pre-generated for convenience.",
+                        info="Used to sign JWTs. Required for HS256/384/512. Uses utf-8 encoding by default. You can prefix with `base64:`, `hex:`, or `0x` for different encodings.",
                     )
                     generate_secret_btn = gr.Button(
                         "Generate New Signing Secret", size="sm"
@@ -172,7 +192,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                     )
                     new_scopes = gr.Textbox(
                         label="Allowed Scopes",
-                        placeholder="read,write,admin",
+                        placeholder='for example: "read,write,admin"',
                     )
                     new_audiences = gr.Textbox(
                         label="Allowed Audiences",
