@@ -56,14 +56,14 @@ basic-oauth2-server serve --port 8080 --host localhost
 curl -X POST http://localhost:8080/oauth/token \
   -d "grant_type=client_credentials" \
   -d "client_id=my-app" \
-  -d "client_secret=my-secret"
+  -d "client_secret=$(echo -n 'my-secret' | base64)"
 ```
 
 #### Using Basic Auth header:
 
 ```bash
 curl http://localhost:8080/oauth/token \
-  -u "my-app:my-secret" \
+  -u "my-app:$(echo -n 'my-secret' | base64)" \
   -d "grant_type=client_credentials"
 ```
 
@@ -80,6 +80,15 @@ Commands:
   admin       Start the admin dashboard server
 ```
 
+### Shared configuration options
+
+The app shares these configuration options across all commands, which can be set via CLI arguments or environment variables:
+
+| Option      | Environment Variable | Default                 | Description                                                   |
+| ----------- | -------------------- | ----------------------- | ------------------------------------------------------------- |
+| `--db`      | `OAUTH_DB_PATH`      | `oauth.db`              | Path to SQLite database file                                  |
+| `--app-url` | `APP_URL`            | `http://localhost:8080` | Issuer URL for JWT `iss` claim (should match your server URL) |
+
 ### serve
 
 Start the main OAuth authorization server.
@@ -88,22 +97,20 @@ Start the main OAuth authorization server.
 basic-oauth2-server serve [options]
 ```
 
-| Option                  | Environment Variable        | Default      | Description                       |
-| ----------------------- | --------------------------- | ------------ | --------------------------------- |
-| `--port`                | `OAUTH_PORT`                | `8080`       | Port for the server               |
-| `--host`                | `OAUTH_HOST`                | `localhost`  | Host address to bind              |
-| `--db`                  | `OAUTH_DB_PATH`             | `./oauth.db` | Path to SQLite database           |
-| `--app-url`             | `APP_URL`                   | -            | Issuer URL for JWT `iss` claim    |
-| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -            | RSA private key for RS256/384/512 |
-| `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY` | -            | ECDSA P-256 private key for ES256 |
-| `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY` | -            | ECDSA P-384 private key for ES384 |
-| `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY` | -            | ECDSA P-521 private key for ES512 |
-| `--eddsa-private-key`   | `OAUTH_EDDSA_PRIVATE_KEY`   | -            | Ed25519 private key for EdDSA     |
-| `--rsa-key-id`          | `OAUTH_RSA_KEY_ID`          | -            | Key ID for RSA (JWT `kid` header) |
-| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`      | -            | Key ID for EC P-256 (`kid`)       |
-| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`      | -            | Key ID for EC P-384 (`kid`)       |
-| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -            | Key ID for EC P-521 (`kid`)       |
-| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -            | Key ID for EdDSA (`kid`)          |
+| Option                  | Environment Variable        | Default     | Description                       |
+| ----------------------- | --------------------------- | ----------- | --------------------------------- |
+| `--port`                | `OAUTH_PORT`                | `8080`      | Port for the server               |
+| `--host`                | `OAUTH_HOST`                | `localhost` | Host address to bind              |
+| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -           | RSA private key for RS256/384/512 |
+| `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY` | -           | ECDSA P-256 private key for ES256 |
+| `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY` | -           | ECDSA P-384 private key for ES384 |
+| `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY` | -           | ECDSA P-521 private key for ES512 |
+| `--eddsa-private-key`   | `OAUTH_EDDSA_PRIVATE_KEY`   | -           | Ed25519 private key for EdDSA     |
+| `--rsa-key-id`          | `OAUTH_RSA_KEY_ID`          | -           | Key ID for RSA (JWT `kid` header) |
+| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`      | -           | Key ID for EC P-256 (`kid`)       |
+| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`      | -           | Key ID for EC P-384 (`kid`)       |
+| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -           | Key ID for EC P-521 (`kid`)       |
+| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -           | Key ID for EdDSA (`kid`)          |
 
 **Note:** Private keys are only needed if you have clients using that algorithm. Key IDs are optional and will be included in the JWT header as `kid` when specified. Keys can be provided as file paths with `@` prefix (e.g., `@/path/to/key.pem`) or as PEM-encoded strings.
 
@@ -155,7 +162,6 @@ basic-oauth2-server clients delete --client-id my-service
 
 | Option             | Description                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------- |
-| `--db`             | Path to SQLite database (default: `./oauth.db`)                                       |
 | `--client-id`      | Client identifier                                                                     |
 | `--client-secret`  | Client secret (password for obtaining tokens). Stored as SHA256 hash                  |
 | `--algorithm`      | Signing algorithm: `HS*`, `RS*`, `PS*`, `ES*`, or `EdDSA`                             |
@@ -211,11 +217,10 @@ Start the optional admin dashboard for managing clients via a web UI.
 basic-oauth2-server admin [options]
 ```
 
-| Option   | Environment Variable | Default      | Description                                           |
-| -------- | -------------------- | ------------ | ----------------------------------------------------- |
-| `--port` | `OAUTH_ADMIN_PORT`   | `8081`       | Port for admin dashboard                              |
-| `--host` | `OAUTH_ADMIN_HOST`   | `localhost`  | Host address (localhost only by default for security) |
-| `--db`   | `OAUTH_DB_PATH`      | `./oauth.db` | Path to SQLite database                               |
+| Option   | Environment Variable | Default     | Description                                           |
+| -------- | -------------------- | ----------- | ----------------------------------------------------- |
+| `--port` | `OAUTH_ADMIN_PORT`   | `8081`      | Port for admin dashboard                              |
+| `--host` | `OAUTH_ADMIN_HOST`   | `localhost` | Host address (localhost only by default for security) |
 
 ## Token Endpoint
 
@@ -316,7 +321,7 @@ basic-oauth2-server serve
 curl http://localhost:8080/oauth/token \
   -d "grant_type=client_credentials" \
   -d "client_id=dev-client" \
-  -d "client_secret=" $(echo -n "dev-secret" | base64)
+  -d "client_secret=$(echo -n 'dev-secret' | base64)"
 ```
 
 ### Setup with RSA

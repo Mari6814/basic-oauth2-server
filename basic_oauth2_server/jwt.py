@@ -16,14 +16,6 @@ def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def _b64url_decode(data: str) -> bytes:
-    """Base64url decode with padding restoration."""
-    padding = 4 - len(data) % 4
-    if padding != 4:
-        data += "=" * padding
-    return base64.urlsafe_b64decode(data)
-
-
 def get_algorithm(alg: str) -> Algorithm:
     """Convert an algorithm name string to a SymmetricAlgorithm or AsymmetricAlgorithm."""
     symmetric_mapping = {
@@ -35,6 +27,9 @@ def get_algorithm(alg: str) -> Algorithm:
         "RS256": AsymmetricAlgorithm.RS256,
         "RS384": AsymmetricAlgorithm.RS384,
         "RS512": AsymmetricAlgorithm.RS512,
+        "PS256": AsymmetricAlgorithm.PS256,
+        "PS384": AsymmetricAlgorithm.PS384,
+        "PS512": AsymmetricAlgorithm.PS512,
         "ES256": AsymmetricAlgorithm.ES256,
         "ES384": AsymmetricAlgorithm.ES384,
         "ES512": AsymmetricAlgorithm.ES512,
