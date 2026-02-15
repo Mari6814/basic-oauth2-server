@@ -4,6 +4,7 @@ import base64
 import json
 import time
 from typing import Any
+import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
@@ -133,6 +134,7 @@ def create_access_token(
         "sub": client_id,
         "iat": now,
         "exp": now + expires_in,
+        "jti": str(uuid.uuid4()),
     }
 
     if issuer:
