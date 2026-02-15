@@ -116,18 +116,8 @@ def main(args: list[str] | None = None) -> int:
     create_parser.add_argument(
         "--algorithm",
         default="HS256",
-        choices=[
-            "HS256",
-            "HS384",
-            "HS512",
-            "RS256",
-            "RS384",
-            "RS512",
-            "ES256",
-            "ES384",
-            "ES512",
-            "EdDSA",
-        ],
+        choices=[alg.name for alg in SymmetricAlgorithm]
+        + [alg.name for alg in AsymmetricAlgorithm],
         help="JWT signing algorithm the client wants (default: HS256)",
     )
     create_parser.add_argument(
