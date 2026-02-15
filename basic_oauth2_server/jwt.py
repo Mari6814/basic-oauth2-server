@@ -18,28 +18,14 @@ def _b64url_encode(data: bytes) -> str:
 
 def get_algorithm(alg: str) -> Algorithm:
     """Convert an algorithm name string to a SymmetricAlgorithm or AsymmetricAlgorithm."""
-    symmetric_mapping = {
-        "HS256": SymmetricAlgorithm.HS256,
-        "HS384": SymmetricAlgorithm.HS384,
-        "HS512": SymmetricAlgorithm.HS512,
-    }
-    asymmetric_mapping = {
-        "RS256": AsymmetricAlgorithm.RS256,
-        "RS384": AsymmetricAlgorithm.RS384,
-        "RS512": AsymmetricAlgorithm.RS512,
-        "PS256": AsymmetricAlgorithm.PS256,
-        "PS384": AsymmetricAlgorithm.PS384,
-        "PS512": AsymmetricAlgorithm.PS512,
-        "ES256": AsymmetricAlgorithm.ES256,
-        "ES384": AsymmetricAlgorithm.ES384,
-        "ES512": AsymmetricAlgorithm.ES512,
-        "EdDSA": AsymmetricAlgorithm.EdDSA,
-        "Ed25519": AsymmetricAlgorithm.EdDSA,
-    }
-    if alg in symmetric_mapping:
-        return symmetric_mapping[alg]
-    if alg in asymmetric_mapping:
-        return asymmetric_mapping[alg]
+    if alg.startswith("HS"):
+        return SymmetricAlgorithm[alg]
+    if alg in SymmetricAlgorithm.__members__:
+        return SymmetricAlgorithm[alg]
+    if alg in AsymmetricAlgorithm:
+        return AsymmetricAlgorithm(alg)
+    if alg in AsymmetricAlgorithm.__members__:
+        return AsymmetricAlgorithm[alg]
     raise ValueError(f"Unsupported algorithm: {alg}")
 
 

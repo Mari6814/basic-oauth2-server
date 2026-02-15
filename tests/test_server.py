@@ -379,6 +379,47 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
     assert header["alg"] == "RS256"
 
 
+@pytest.fixture
+def client_with_ps256(temp_db: str) -> TestClient:
+    """Create a test client using PS256 algorithm (RSA-PSS)."""
+    create_client(
+        db_path=temp_db,
+        client_id="ps256-client",
+        client_secret=b"ps256-secret",
+        algorithm=AsymmetricAlgorithm.PS256,
+    )
+
+    config = ServerConfig(
+        host="localhost",
+        port=8080,
+        db_path=temp_db,
+        rsa_private_key=f"@{KEYS_DIR / 'rsa-private.pem'}",
+    )
+    app = create_app(config)
+    return TestClient(app)
+
+
+def test_token_ps256_algorithm(client_with_ps256: TestClient) -> None:
+    """Test token generation with PS256 (RSA-PSS)."""
+    response = client_with_ps256.post(
+        "/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "ps256-client",
+            "client_secret": b64("ps256-secret"),
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+
+    header_b64 = data["access_token"].split(".")[0]
+    header_b64 += "=" * (4 - len(header_b64) % 4)
+    header = json.loads(base64.urlsafe_b64decode(header_b64))
+    assert header["alg"] == "PS256"
+
+
 def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
     """Test token generation with ES256."""
     response = client_with_es256.post(

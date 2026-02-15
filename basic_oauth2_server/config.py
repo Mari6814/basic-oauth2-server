@@ -14,12 +14,12 @@ class ServerConfig:
     db_path: str = "./oauth.db"
     app_url: str | None = None  # Issuer URL for JWT 'iss' claim
     # Private keys for asymmetric algorithms (each algorithm family needs its own key)
-    rsa_private_key: str | None = None  # For RS256, RS384, RS512
+    rsa_private_key: str | None = None  # For RS256, RS384, RS512, PS256, PS384, PS512
     ec_p256_private_key: str | None = None  # For ES256
     ec_p384_private_key: str | None = None  # For ES384
     ec_p521_private_key: str | None = None  # For ES512
     eddsa_private_key: str | None = None  # For EdDSA
-    # Key IDs for JWT header (optional)
+    # Key IDs for JWT header (optional). These will be added to the JWT 'kid' header if the corresponding key is used for signing.
     rsa_key_id: str | None = None
     ec_p256_key_id: str | None = None
     ec_p384_key_id: str | None = None

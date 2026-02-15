@@ -53,7 +53,7 @@ def main(args: list[str] | None = None) -> int:
     serve_parser.add_argument(
         "--rsa-private-key",
         default=os.environ.get("OAUTH_RSA_PRIVATE_KEY"),
-        help="RSA private key for RS256/RS384/RS512 (@file or PEM format)",
+        help="RSA private key for RS*/PS* algorithms (@file or PEM format)",
     )
     serve_parser.add_argument(
         "--ec-p256-private-key",

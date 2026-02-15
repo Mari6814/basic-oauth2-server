@@ -1,17 +1,25 @@
 """Tests for JWT signing."""
 
+import base64
 import json
 
 import pytest
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
 from basic_oauth2_server.jwt import (
-    _b64url_decode,
     create_access_token,
     create_jwt,
     get_algorithm,
     is_symmetric,
 )
+
+
+def _b64url_decode(data: str) -> bytes:
+    """Base64url decode with padding restoration (test helper)."""
+    padding = 4 - len(data) % 4
+    if padding != 4:
+        data += "=" * padding
+    return base64.urlsafe_b64decode(data)
 
 
 def test_is_symmetric() -> None:

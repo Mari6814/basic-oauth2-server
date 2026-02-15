@@ -11,7 +11,7 @@ I built this to get more familiar with the OAuth 2.0 spec and to have a simple t
 
 - **OAuth 2.0 Client Credentials Flow** - Standard-compliant token endpoint
 - **JWT Access Tokens** - Tokens are signed JWTs with configurable algorithms
-- **Multiple Signing Algorithms** - Support for HMAC-SHA (HS256, HS384, HS512), RSA (RS256, RS384, RS512), ECDSA (ES256, ES384, ES512), and EdDSA (Ed25519)
+- **Multiple Signing Algorithms** - Support for HMAC-SHA (HS256, HS384, HS512), RSA (RS256, RS384, RS512), RSA-PSS (PS256, PS384, PS512), ECDSA (ES256, ES384, ES512), and EdDSA (Ed25519)
 - **SQLite Persistence** - Simple file-based database, no external DB required
 - **CLI Client Management** - Create and manage clients from the command line
 - **Optional Admin Dashboard** - Web UI for client management (localhost-only by default)
@@ -273,7 +273,7 @@ Configuration can be provided via CLI arguments or environment variables. CLI ar
 | `OAUTH_DB_PATH`             | SQLite database path                                 |
 | `OAUTH_ADMIN_PORT`          | Admin dashboard port                                 |
 | `OAUTH_ADMIN_HOST`          | Admin dashboard host                                 |
-| `OAUTH_RSA_PRIVATE_KEY`     | RSA private key for RS256/RS384/RS512                |
+| `OAUTH_RSA_PRIVATE_KEY`     | RSA private key for RS*/PS* algorithms               |
 | `OAUTH_EC_P256_PRIVATE_KEY` | ECDSA P-256 private key for ES256                    |
 | `OAUTH_EC_P384_PRIVATE_KEY` | ECDSA P-384 private key for ES384                    |
 | `OAUTH_EC_P521_PRIVATE_KEY` | ECDSA P-521 private key for ES512                    |

@@ -219,6 +219,9 @@ def _get_private_key_for_algorithm(
             AsymmetricAlgorithm.RS256
             | AsymmetricAlgorithm.RS384
             | AsymmetricAlgorithm.RS512
+            | AsymmetricAlgorithm.PS256
+            | AsymmetricAlgorithm.PS384
+            | AsymmetricAlgorithm.PS512
         ):
             return config.rsa_private_key, config.rsa_key_id
         case AsymmetricAlgorithm.ES256:
