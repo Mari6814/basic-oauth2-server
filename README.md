@@ -86,7 +86,7 @@ The app shares these configuration options across all commands, which can be set
 
 | Option      | Environment Variable | Default                 | Description                                                   |
 | ----------- | -------------------- | ----------------------- | ------------------------------------------------------------- |
-| `--db`      | `OAUTH_DB_PATH`      | `oauth.db`              | Path to SQLite database file                                  |
+| `--db`      | `OAUTH_DB_PATH`      | `./oauth.db`            | Path to SQLite database file                                  |
 | `--app-url` | `APP_URL`            | `http://localhost:8080` | Issuer URL for JWT `iss` claim (should match your server URL) |
 
 ### serve
@@ -101,7 +101,7 @@ basic-oauth2-server serve [options]
 | ----------------------- | --------------------------- | ----------- | --------------------------------- |
 | `--port`                | `OAUTH_PORT`                | `8080`      | Port for the server               |
 | `--host`                | `OAUTH_HOST`                | `localhost` | Host address to bind              |
-| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -           | RSA private key for RS256/384/512 |
+| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -           | RSA private key for RS*/PS*       |
 | `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY` | -           | ECDSA P-256 private key for ES256 |
 | `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY` | -           | ECDSA P-384 private key for ES384 |
 | `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY` | -           | ECDSA P-521 private key for ES512 |
