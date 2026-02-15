@@ -1,6 +1,8 @@
 """Tests for the OAuth server."""
 
 import os
+import base64
+import json
 from pathlib import Path
 from collections.abc import Generator
 
@@ -223,10 +225,6 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     data = resp.json()
     assert "access_token" in data
 
-    # decode payload and verify aud claim matches the requested audience
-    import base64
-    import json
-
     payload_b64 = data["access_token"].split(".")[1]
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
     payload = json.loads(base64.urlsafe_b64decode(payload_b64))
@@ -368,9 +366,6 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    # Verify JWT header indicates RS256
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -392,8 +387,6 @@ def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -415,8 +408,6 @@ def test_token_es384_algorithm(client_with_es384: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -438,8 +429,6 @@ def test_token_es512_algorithm(client_with_es512: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -461,8 +450,6 @@ def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -505,8 +492,6 @@ def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     header_b64 = data["access_token"].split(".")[0]
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -550,8 +535,6 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    import base64
-    import json
 
     # Decode payload (second part of JWT)
     payload_b64 = data["access_token"].split(".")[1]
@@ -559,3 +542,77 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     payload = json.loads(base64.urlsafe_b64decode(payload_b64))
     assert payload["iss"] == "https://auth.example.com"
     assert payload["sub"] == "issuer-client"
+
+
+def test_token_endpoint_basic_auth(client_with_db: TestClient) -> None:
+    """Test successful token request using HTTP Basic auth."""
+
+    credentials = base64.b64encode(b"test-client:dGVzdC1zZWNyZXQ=").decode()
+    response = client_with_db.post(
+        "/oauth/token",
+        data={"grant_type": "client_credentials"},
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "Bearer"
+
+
+def test_token_endpoint_basic_auth_invalid_secret(client_with_db: TestClient) -> None:
+    """Test Basic auth with wrong secret."""
+
+    credentials = base64.b64encode(b"test-client:d3Jvbmctc2VjcmV0").decode()
+    response = client_with_db.post(
+        "/oauth/token",
+        data={"grant_type": "client_credentials"},
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_client"
+
+
+def test_token_endpoint_basic_auth_unknown_client(client_with_db: TestClient) -> None:
+    """Test Basic auth with unknown client."""
+
+    credentials = base64.b64encode(b"unknown-client:c29tZS1zZWNyZXQ=").decode()
+    response = client_with_db.post(
+        "/oauth/token",
+        data={"grant_type": "client_credentials"},
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_client"
+
+
+def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
+    """Test that Basic auth takes priority over form credentials."""
+
+    # Provide correct credentials in header, wrong in form
+    credentials = base64.b64encode(b"test-client:dGVzdC1zZWNyZXQ=").decode()
+    response = client_with_db.post(
+        "/oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "test-client",
+            "client_secret": "d3Jvbmctc2VjcmV0",
+        },
+        headers={"Authorization": f"Basic {credentials}"},
+    )
+
+    # Should succeed because header takes priority
+    assert response.status_code == 200
+
+
+def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
+    """Test error when no credentials provided."""
+    response = client_with_db.post(
+        "/oauth/token",
+        data={"grant_type": "client_credentials"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_client"
