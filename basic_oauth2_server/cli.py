@@ -53,27 +53,27 @@ def main(args: list[str] | None = None) -> int:
     serve_parser.add_argument(
         "--rsa-private-key",
         default=os.environ.get("OAUTH_RSA_PRIVATE_KEY"),
-        help="RSA private key for RS*/PS* algorithms (@file or PEM format)",
+        help="RSA private key file path for RS*/PS* algorithms",
     )
     serve_parser.add_argument(
         "--ec-p256-private-key",
         default=os.environ.get("OAUTH_EC_P256_PRIVATE_KEY"),
-        help="ECDSA P-256 private key for ES256 (@file or PEM format)",
+        help="ECDSA P-256 private key file path for ES256",
     )
     serve_parser.add_argument(
         "--ec-p384-private-key",
         default=os.environ.get("OAUTH_EC_P384_PRIVATE_KEY"),
-        help="ECDSA P-384 private key for ES384 (@file or PEM format)",
+        help="ECDSA P-384 private key file path for ES384",
     )
     serve_parser.add_argument(
         "--ec-p521-private-key",
         default=os.environ.get("OAUTH_EC_P521_PRIVATE_KEY"),
-        help="ECDSA P-521 private key for ES512 (@file or PEM format)",
+        help="ECDSA P-521 private key file path for ES512",
     )
     serve_parser.add_argument(
         "--eddsa-private-key",
         default=os.environ.get("OAUTH_EDDSA_PRIVATE_KEY"),
-        help="Ed25519 private key for EdDSA (@file or PEM format)",
+        help="Ed25519 private key file path for EdDSA",
     )
     serve_parser.add_argument(
         "--rsa-key-id",
@@ -193,6 +193,24 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
+def _normalize_key_path(value: str | None) -> str | None:
+    """Normalize a private key CLI value to a parse_secret-compatible string.
+
+    If the value is already prefixed (@, base64:, 0x, hex:) or looks like
+    inline PEM, it is returned as-is. Otherwise it is treated as a file path
+    and prefixed with '@' so that parse_secret reads it from disk.
+    """
+    if value is None:
+        return None
+    if value.startswith(("@", "base64:", "0x", "hex:")):
+        return value
+    if value.startswith("-----"):
+        # Inline PEM string
+        return value
+    # Treat as file path
+    return f"@{value}"
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     """Handle the 'serve' command."""
     from basic_oauth2_server.server import run_server
@@ -202,11 +220,11 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         port=args.port,
         db_path=args.db,
         app_url=args.app_url,
-        rsa_private_key=args.rsa_private_key,
-        ec_p256_private_key=args.ec_p256_private_key,
-        ec_p384_private_key=args.ec_p384_private_key,
-        ec_p521_private_key=args.ec_p521_private_key,
-        eddsa_private_key=args.eddsa_private_key,
+        rsa_private_key=_normalize_key_path(args.rsa_private_key),
+        ec_p256_private_key=_normalize_key_path(args.ec_p256_private_key),
+        ec_p384_private_key=_normalize_key_path(args.ec_p384_private_key),
+        ec_p521_private_key=_normalize_key_path(args.ec_p521_private_key),
+        eddsa_private_key=_normalize_key_path(args.eddsa_private_key),
         rsa_key_id=args.rsa_key_id,
         ec_p256_key_id=args.ec_p256_key_id,
         ec_p384_key_id=args.ec_p384_key_id,

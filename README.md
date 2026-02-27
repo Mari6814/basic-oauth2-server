@@ -112,7 +112,7 @@ basic-oauth2-server serve [options]
 | `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -           | Key ID for EC P-521 (`kid`)       |
 | `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -           | Key ID for EdDSA (`kid`)          |
 
-**Note:** Private keys are only needed if you have clients using that algorithm. Key IDs are optional and will be included in the JWT header as `kid` when specified. Keys can be provided as file paths with `@` prefix (e.g., `@/path/to/key.pem`) or as PEM-encoded strings.
+**Note:** Private keys are only needed if you have clients using that algorithm. Key IDs are optional and will be included in the JWT header as `kid` when specified. Private key values are treated as file paths by default, or as inline PEM if the value starts with `-----`.
 
 ### clients
 
@@ -204,7 +204,7 @@ basic-oauth2-server clients create \
   --algorithm RS256
 
 # Then start server with the key
-basic-oauth2-server serve --rsa-private-key @./private.pem
+basic-oauth2-server serve --rsa-private-key ./private.pem
 ```
 
 ### admin
@@ -339,7 +339,7 @@ basic-oauth2-server clients create \
   --audience "https://api.example.com"
 
 # Start the server with the RSA private key
-basic-oauth2-server serve --rsa-private-key @private.pem
+basic-oauth2-server serve --rsa-private-key private.pem
 ```
 
 ### Setup with Multiple Algorithm Support
@@ -358,11 +358,11 @@ basic-oauth2-server clients create --client-id client-hmac --client-secret secre
 
 # Start server with all private keys (optionally with key IDs)
 basic-oauth2-server serve \
-  --rsa-private-key @rsa-private.pem \
+  --rsa-private-key rsa-private.pem \
   --rsa-key-id my-rsa-key-1 \
-  --ec-p256-private-key @es256-private.pem \
+  --ec-p256-private-key es256-private.pem \
   --ec-p256-key-id my-es256-key-1 \
-  --eddsa-private-key @ed25519-private.pem \
+  --eddsa-private-key ed25519-private.pem \
   --eddsa-key-id my-eddsa-key-1
 ```
 
@@ -392,6 +392,9 @@ export OAUTH_EC_P256_PRIVATE_KEY="@/etc/oauth2/es256-private.pem"
 export OAUTH_EC_P384_PRIVATE_KEY="@/etc/oauth2/es384-private.pem"
 export OAUTH_EC_P521_PRIVATE_KEY="@/etc/oauth2/es512-private.pem"
 export OAUTH_EDDSA_PRIVATE_KEY="@/etc/oauth2/ed25519-private.pem"
+
+# Note: Environment variables still require the @ prefix for file paths.
+# The CLI normalizes plain paths automatically, but env vars are passed through as-is.
 
 # Optionally set key IDs for JWT kid header
 export OAUTH_RSA_KEY_ID="rsa-prod-2026"
