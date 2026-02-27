@@ -114,7 +114,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                     "",
                     "Example curl command:",
                     "",
-                    f"curl {config.app_url or 'APP_URL'}/oauth/token \\\n"
+                    f"curl {config.app_url or 'APP_URL'}/oauth2/token \\\n"
                     f'\t-u "{client_id}:{client_secret_base64}" \\\n'
                     f'\t-d "grant_type=client_credentials"',
                 ],

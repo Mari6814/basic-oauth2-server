@@ -53,7 +53,7 @@ basic-oauth2-server serve --port 8080 --host localhost
 #### Using urlencoded form data:
 
 ```bash
-curl -X POST http://localhost:8080/oauth/token \
+curl -X POST http://localhost:8080/oauth2/token \
   -d "grant_type=client_credentials" \
   -d "client_id=my-app" \
   -d "client_secret=$(echo -n 'my-secret' | base64)"
@@ -62,7 +62,7 @@ curl -X POST http://localhost:8080/oauth/token \
 #### Using Basic Auth header:
 
 ```bash
-curl http://localhost:8080/oauth/token \
+curl http://localhost:8080/oauth2/token \
   -u "my-app:$(echo -n 'my-secret' | base64)" \
   -d "grant_type=client_credentials"
 ```
@@ -224,7 +224,7 @@ basic-oauth2-server admin [options]
 
 ## Token Endpoint
 
-### POST /oauth/token
+### POST /oauth2/token
 
 Request a new access token.
 
@@ -318,7 +318,7 @@ basic-oauth2-server clients create \
 basic-oauth2-server serve
 
 # Get a token
-curl http://localhost:8080/oauth/token \
+curl http://localhost:8080/oauth2/token \
   -d "grant_type=client_credentials" \
   -d "client_id=dev-client" \
   -d "client_secret=$(echo -n 'dev-secret' | base64)"
@@ -383,15 +383,15 @@ basic-oauth2-server admin --port 8081
 ```bash
 export APP_KEY="$(openssl rand -base64 32)"
 export APP_URL="https://auth.example.com"
-export OAUTH_DB_PATH=/var/lib/oauth/oauth.db
+export OAUTH_DB_PATH=/var/lib/oauth2/oauth.db
 export OAUTH_PORT=9000
 
 # Set private keys for each algorithm family you want to support
-export OAUTH_RSA_PRIVATE_KEY="@/etc/oauth/rsa-private.pem"
-export OAUTH_EC_P256_PRIVATE_KEY="@/etc/oauth/es256-private.pem"
-export OAUTH_EC_P384_PRIVATE_KEY="@/etc/oauth/es384-private.pem"
-export OAUTH_EC_P521_PRIVATE_KEY="@/etc/oauth/es512-private.pem"
-export OAUTH_EDDSA_PRIVATE_KEY="@/etc/oauth/ed25519-private.pem"
+export OAUTH_RSA_PRIVATE_KEY="@/etc/oauth2/rsa-private.pem"
+export OAUTH_EC_P256_PRIVATE_KEY="@/etc/oauth2/es256-private.pem"
+export OAUTH_EC_P384_PRIVATE_KEY="@/etc/oauth2/es384-private.pem"
+export OAUTH_EC_P521_PRIVATE_KEY="@/etc/oauth2/es512-private.pem"
+export OAUTH_EDDSA_PRIVATE_KEY="@/etc/oauth2/ed25519-private.pem"
 
 # Optionally set key IDs for JWT kid header
 export OAUTH_RSA_KEY_ID="rsa-prod-2026"

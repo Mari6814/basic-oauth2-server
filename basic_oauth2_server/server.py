@@ -42,7 +42,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         """Serve the JSON Web Key Set for configured asymmetric keys."""
         return JSONResponse(content=jwks_document)
 
-    @app.post("/oauth/token")
+    @app.post("/oauth2/token")
     async def token_endpoint(
         grant_type: Annotated[str, Form()],
         client_id: Annotated[str | None, Form()] = None,

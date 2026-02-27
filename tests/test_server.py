@@ -58,7 +58,7 @@ def b64(s: str) -> str:
 def test_token_endpoint_success(client_with_db: TestClient) -> None:
     """Test successful token request."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -76,7 +76,7 @@ def test_token_endpoint_success(client_with_db: TestClient) -> None:
 def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
     """Test token request with valid scope."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -107,7 +107,7 @@ def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
     tc = TestClient(app)
 
     resp = tc.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "subset-client",
@@ -124,7 +124,7 @@ def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
 def test_token_endpoint_invalid_scope(client_with_db: TestClient) -> None:
     """Test token request with invalid scope."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -141,7 +141,7 @@ def test_token_endpoint_invalid_scope(client_with_db: TestClient) -> None:
 def test_token_endpoint_invalid_client(client_with_db: TestClient) -> None:
     """Test token request with invalid client."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "nonexistent",
@@ -157,7 +157,7 @@ def test_token_endpoint_invalid_client(client_with_db: TestClient) -> None:
 def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
     """Test token request with wrong secret."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -173,7 +173,7 @@ def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
 def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> None:
     """Test token request with unsupported grant type."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "authorization_code",
             "client_id": "test-client",
@@ -189,7 +189,7 @@ def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> No
 def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
     """Test token request with valid audience."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -218,7 +218,7 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     tc = TestClient(app)
 
     resp = tc.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "audience-client",
@@ -240,7 +240,7 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
 def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
     """Test token request with invalid audience."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -361,7 +361,7 @@ def client_with_eddsa(temp_db: str) -> TestClient:
 def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
     """Test token generation with RS256."""
     response = client_with_rsa.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "rsa-client",
@@ -402,7 +402,7 @@ def client_with_ps256(temp_db: str) -> TestClient:
 def test_token_ps256_algorithm(client_with_ps256: TestClient) -> None:
     """Test token generation with PS256 (RSA-PSS)."""
     response = client_with_ps256.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "ps256-client",
@@ -423,7 +423,7 @@ def test_token_ps256_algorithm(client_with_ps256: TestClient) -> None:
 def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
     """Test token generation with ES256."""
     response = client_with_es256.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "es256-client",
@@ -444,7 +444,7 @@ def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
 def test_token_es384_algorithm(client_with_es384: TestClient) -> None:
     """Test token generation with ES384."""
     response = client_with_es384.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "es384-client",
@@ -465,7 +465,7 @@ def test_token_es384_algorithm(client_with_es384: TestClient) -> None:
 def test_token_es512_algorithm(client_with_es512: TestClient) -> None:
     """Test token generation with ES512."""
     response = client_with_es512.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "es512-client",
@@ -486,7 +486,7 @@ def test_token_es512_algorithm(client_with_es512: TestClient) -> None:
 def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
     """Test token generation with EdDSA."""
     response = client_with_eddsa.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "eddsa-client",
@@ -528,7 +528,7 @@ def client_with_key_id(temp_db: str) -> TestClient:
 def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
     """Test that token includes kid in header when key ID is configured."""
     response = client_with_key_id.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "kid-client",
@@ -571,7 +571,7 @@ def client_with_issuer(temp_db: str) -> TestClient:
 def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     """Test that token includes iss claim when APP_URL is configured."""
     response = client_with_issuer.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "issuer-client",
@@ -598,7 +598,7 @@ def test_token_endpoint_basic_auth(client_with_db: TestClient) -> None:
         f"test-client:{b64('test-secret')}".encode()
     ).decode()
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={"grant_type": "client_credentials"},
         headers={"Authorization": f"Basic {credentials}"},
     )
@@ -616,7 +616,7 @@ def test_token_endpoint_basic_auth_invalid_secret(client_with_db: TestClient) ->
         f"test-client:{b64('wrong-secret')}".encode()
     ).decode()
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={"grant_type": "client_credentials"},
         headers={"Authorization": f"Basic {credentials}"},
     )
@@ -632,7 +632,7 @@ def test_token_endpoint_basic_auth_unknown_client(client_with_db: TestClient) ->
         f"unknown-client:{b64('some-secret')}".encode()
     ).decode()
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={"grant_type": "client_credentials"},
         headers={"Authorization": f"Basic {credentials}"},
     )
@@ -649,7 +649,7 @@ def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
         f"test-client:{b64('test-secret')}".encode()
     ).decode()
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -665,7 +665,7 @@ def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
 def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
     """Test error when no credentials provided."""
     response = client_with_db.post(
-        "/oauth/token",
+        "/oauth2/token",
         data={"grant_type": "client_credentials"},
     )
 
