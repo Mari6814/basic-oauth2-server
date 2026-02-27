@@ -69,7 +69,7 @@ def create_jwt(
     signing_input = f"{header_b64}.{payload_b64}".encode()
 
     # Sign based on algorithm type
-    if is_symmetric(algorithm):
+    if isinstance(algorithm, SymmetricAlgorithm):
         if not secret:
             raise ValueError(f"Secret required for {algorithm.name}")
         signature = algorithm.sign(secret, signing_input)
