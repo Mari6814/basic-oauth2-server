@@ -139,7 +139,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=45.0.0" },
     { name = "fastapi", specifier = ">=0.128.5" },
     { name = "gradio", marker = "extra == 'admin'", specifier = ">=6.5.1" },
-    { name = "jws-algorithms", specifier = ">=1.2.2" },
+    { name = "jws-algorithms", specifier = ">=1.3.0" },
     { name = "python-multipart", specifier = ">=0.0.22" },
     { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "uvicorn", specifier = ">=0.40.0" },
@@ -601,14 +601,14 @@ wheels = [
 
 [[package]]
 name = "jws-algorithms"
-version = "1.2.2"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/aa/56feb5d48c5dedc7852ebef1a462a02dbeffcdc925cd569e7529007256e1/jws_algorithms-1.2.2.tar.gz", hash = "sha256:3b1a3723ab473d87df93d55a18d8304b7d30a64007cf8d580fc38a53c50f2fe2", size = 10967, upload-time = "2025-10-08T20:32:04.976Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e8/d0/3c9c5ccaf95998549d40d6ad30283bfdad6de443df8118bbace664d2f777/jws_algorithms-1.3.0.tar.gz", hash = "sha256:a0b66a4780c377a657a796bbff9979009a09b19c2aa79a8f5173210d5c2f4c2a", size = 13242, upload-time = "2026-02-27T21:20:52.021Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/90/3b9d08f5f6a61a69a74e0f8fcd0540eeab889e5ce526628bc0aba9f45128/jws_algorithms-1.2.2-py3-none-any.whl", hash = "sha256:c90e86295b49aa001d2c61d3bee83a8f7f0859186eae027084be2c65b8dd1f45", size = 11681, upload-time = "2025-10-08T20:32:03.623Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/11/860fe46a481ec6b88acd5451f37aa494f604665b99484eae85e1d17e83fa/jws_algorithms-1.3.0-py3-none-any.whl", hash = "sha256:5ac3a0fb8ff095021e32afee0f1173ba4a93c3a5a05ab30f41610da651c5e03e", size = 14442, upload-time = "2026-02-27T21:20:50.711Z" },
 ]
 
 [[package]]

@@ -12,6 +12,7 @@ from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import Client, get_client, init_db, touch_client_last_used
+from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.jwt import create_access_token, get_algorithm
 from basic_oauth2_server.secrets import parse_secret
 
@@ -32,6 +33,14 @@ def create_app(config: ServerConfig) -> FastAPI:
     # Initialize database
     init_db(config.db_path)
     logger.info("OAuth server initialized with db: %s", config.db_path)
+
+    # Build JWKS once at startup (keys don't change at runtime)
+    jwks_document = build_jwks(config)
+
+    @app.get("/.well-known/jwks.json")
+    async def jwks_endpoint() -> JSONResponse:
+        """Serve the JSON Web Key Set for configured asymmetric keys."""
+        return JSONResponse(content=jwks_document)
 
     @app.post("/oauth/token")
     async def token_endpoint(

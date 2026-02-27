@@ -19,7 +19,7 @@ class ServerConfig:
     ec_p384_private_key: str | None = None  # For ES384
     ec_p521_private_key: str | None = None  # For ES512
     eddsa_private_key: str | None = None  # For EdDSA
-    # Key IDs for JWT header (optional). These will be added to the JWT 'kid' header if the corresponding key is used for signing.
+    # These will be added to the JWT 'kid' header and the jwks.json 'kid' field if set
     rsa_key_id: str | None = None
     ec_p256_key_id: str | None = None
     ec_p384_key_id: str | None = None

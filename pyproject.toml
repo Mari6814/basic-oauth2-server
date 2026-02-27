@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "cryptography>=45.0.0",
     "fastapi>=0.128.5",
-    "jws-algorithms>=1.2.2",
+    "jws-algorithms>=1.3.0",
     "python-multipart>=0.0.22",
     "sqlalchemy>=2.0.46",
     "uvicorn>=0.40.0",
