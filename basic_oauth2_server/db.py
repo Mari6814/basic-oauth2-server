@@ -68,11 +68,20 @@ class Client(Base):
             return []
         return [s.strip() for s in self.scopes.split(",") if s.strip()]
 
+    def validate_scopes(self, requested_scopes: list[str]) -> list[str]:
+        """Return a list of scopes not allowed for this client."""
+        allowed = self.get_scopes_list()
+        return [s for s in requested_scopes if s not in allowed]
+
     def get_audiences_list(self) -> list[str]:
         """Return audiences as a list."""
         if not self.audiences:
             return []
         return [a.strip() for a in self.audiences.split(",") if a.strip()]
+
+    def is_audience_allowed(self, audience: str) -> bool:
+        """Check whether the given audience is in this client's allowed list."""
+        return audience in self.get_audiences_list()
 
     def get_signing_secret_fingerprint(self) -> str | None:
         """Return a short SHA256 fingerprint for the signing secret with prefix."""
