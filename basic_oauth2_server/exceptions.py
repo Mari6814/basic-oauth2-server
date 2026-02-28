@@ -3,7 +3,7 @@
 from typing import Literal
 
 
-class OAuthException(Exception):
+class OAuthError(Exception):
     """Base class for errors that can be raised during the OAuth2 flow."""
 
     def __init__(
@@ -12,6 +12,7 @@ class OAuthException(Exception):
             "invalid_request",
             "invalid_client",
             "invalid_scope",
+            "invalid_audience",
             "unauthorized_client",
             "server_error",
         ],
