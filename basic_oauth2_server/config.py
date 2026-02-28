@@ -4,6 +4,8 @@ import os
 from typing import Self
 from dataclasses import dataclass
 
+from jws_algorithms import AsymmetricAlgorithm
+
 
 @dataclass
 class ServerConfig:
@@ -47,6 +49,31 @@ class ServerConfig:
             ec_p521_key_id=os.environ.get("OAUTH_EC_P521_KEY_ID"),
             eddsa_key_id=os.environ.get("OAUTH_EDDSA_KEY_ID"),
         )
+
+    def get_private_key_for_algorithm(
+        self, algorithm: AsymmetricAlgorithm
+    ) -> tuple[str | None, str | None]:
+        """Get the appropriate private key and key ID for the given algorithm."""
+        match algorithm:
+            case (
+                AsymmetricAlgorithm.RS256
+                | AsymmetricAlgorithm.RS384
+                | AsymmetricAlgorithm.RS512
+                | AsymmetricAlgorithm.PS256
+                | AsymmetricAlgorithm.PS384
+                | AsymmetricAlgorithm.PS512
+            ):
+                return self.rsa_private_key, self.rsa_key_id
+            case AsymmetricAlgorithm.ES256:
+                return self.ec_p256_private_key, self.ec_p256_key_id
+            case AsymmetricAlgorithm.ES384:
+                return self.ec_p384_private_key, self.ec_p384_key_id
+            case AsymmetricAlgorithm.ES512:
+                return self.ec_p521_private_key, self.ec_p521_key_id
+            case AsymmetricAlgorithm.EdDSA:
+                return self.eddsa_private_key, self.eddsa_key_id
+            case _:
+                return None, None
 
 
 @dataclass
