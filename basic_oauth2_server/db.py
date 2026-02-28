@@ -11,6 +11,10 @@ from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
 from basic_oauth2_server.jwt import Algorithm
 
+# TODO: Cache sessionmaker result
+# TODO: Allow all repository functions to accept a session in addition to the path
+# TODO: Create the session once when the server config is created
+
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy models."""
