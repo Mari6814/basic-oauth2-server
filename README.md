@@ -97,20 +97,21 @@ Start the main OAuth authorization server.
 basic-oauth2-server serve [options]
 ```
 
-| Option                  | Environment Variable        | Default     | Description                       |
-| ----------------------- | --------------------------- | ----------- | --------------------------------- |
-| `--port`                | `OAUTH_PORT`                | `8080`      | Port for the server               |
-| `--host`                | `OAUTH_HOST`                | `localhost` | Host address to bind              |
-| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -           | RSA private key for RS*/PS*       |
-| `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY` | -           | ECDSA P-256 private key for ES256 |
-| `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY` | -           | ECDSA P-384 private key for ES384 |
-| `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY` | -           | ECDSA P-521 private key for ES512 |
-| `--eddsa-private-key`   | `OAUTH_EDDSA_PRIVATE_KEY`   | -           | Ed25519 private key for EdDSA     |
-| `--rsa-key-id`          | `OAUTH_RSA_KEY_ID`          | -           | Key ID for RSA (JWT `kid` header) |
-| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`      | -           | Key ID for EC P-256 (`kid`)       |
-| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`      | -           | Key ID for EC P-384 (`kid`)       |
-| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -           | Key ID for EC P-521 (`kid`)       |
-| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -           | Key ID for EdDSA (`kid`)          |
+| Option                  | Environment Variable            | Default     | Description                       |
+| ----------------------- | ------------------------------- | ----------- | --------------------------------- |
+| `--port`                | `OAUTH_PORT`                    | `8080`      | Port for the server               |
+| `--host`                | `OAUTH_HOST`                    | `localhost` | Host address to bind              |
+| `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`         | -           | RSA private key for RS*/PS*       |
+| `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY`     | -           | ECDSA P-256 private key for ES256 |
+| `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY`     | -           | ECDSA P-384 private key for ES384 |
+| `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY`     | -           | ECDSA P-521 private key for ES512 |
+| `--eddsa-private-key`   | `OAUTH_EDDSA_PRIVATE_KEY`       | -           | Ed25519 private key for EdDSA     |
+| `--rsa-key-id`          | `OAUTH_RSA_KEY_ID`              | -           | Key ID for RSA (JWT `kid` header) |
+| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`          | -           | Key ID for EC P-256 (`kid`)       |
+| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`          | -           | Key ID for EC P-384 (`kid`)       |
+| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`          | -           | Key ID for EC P-521 (`kid`)       |
+| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`            | -           | Key ID for EdDSA (`kid`)          |
+| -                       | `OAUTH_ACCESS_TOKEN_EXPIRES_IN` | `3600`      | Default access token lifetime (s) |
 
 **Note:** Private keys are only needed if you have clients using that algorithm. Key IDs are optional and will be included in the JWT header as `kid` when specified. Private key values are treated as file paths by default, or as inline PEM if the value starts with `-----`.
 
@@ -264,25 +265,26 @@ The parameters `client_id` and `client_secret` can also be provided via HTTP Bas
 
 Configuration can be provided via CLI arguments or environment variables. CLI arguments take precedence.
 
-| Environment Variable        | Description                                          |
-| --------------------------- | ---------------------------------------------------- |
-| `APP_KEY`                   | Encryption key for sensitive data stored in database |
-| `APP_URL`                   | Issuer URL for JWT `iss` claim                       |
-| `OAUTH_PORT`                | Main server port                                     |
-| `OAUTH_HOST`                | Main server host                                     |
-| `OAUTH_DB_PATH`             | SQLite database path                                 |
-| `OAUTH_ADMIN_PORT`          | Admin dashboard port                                 |
-| `OAUTH_ADMIN_HOST`          | Admin dashboard host                                 |
-| `OAUTH_RSA_PRIVATE_KEY`     | RSA private key for RS*/PS* algorithms               |
-| `OAUTH_EC_P256_PRIVATE_KEY` | ECDSA P-256 private key for ES256                    |
-| `OAUTH_EC_P384_PRIVATE_KEY` | ECDSA P-384 private key for ES384                    |
-| `OAUTH_EC_P521_PRIVATE_KEY` | ECDSA P-521 private key for ES512                    |
-| `OAUTH_EDDSA_PRIVATE_KEY`   | Ed25519 private key for EdDSA                        |
-| `OAUTH_RSA_KEY_ID`          | Key ID for RSA keys (included in JWT `kid` header)   |
-| `OAUTH_EC_P256_KEY_ID`      | Key ID for EC P-256 key (JWT `kid` header)           |
-| `OAUTH_EC_P384_KEY_ID`      | Key ID for EC P-384 key (JWT `kid` header)           |
-| `OAUTH_EC_P521_KEY_ID`      | Key ID for EC P-521 key (JWT `kid` header)           |
-| `OAUTH_EDDSA_KEY_ID`        | Key ID for EdDSA key (JWT `kid` header)              |
+| Environment Variable            | Description                                              |
+| ------------------------------- | -------------------------------------------------------- |
+| `APP_KEY`                       | Encryption key for sensitive data stored in database     |
+| `APP_URL`                       | Issuer URL for JWT `iss` claim                           |
+| `OAUTH_PORT`                    | Main server port                                         |
+| `OAUTH_HOST`                    | Main server host                                         |
+| `OAUTH_DB_PATH`                 | SQLite database path                                     |
+| `OAUTH_ADMIN_PORT`              | Admin dashboard port                                     |
+| `OAUTH_ADMIN_HOST`              | Admin dashboard host                                     |
+| `OAUTH_RSA_PRIVATE_KEY`         | RSA private key for RS*/PS* algorithms                   |
+| `OAUTH_EC_P256_PRIVATE_KEY`     | ECDSA P-256 private key for ES256                        |
+| `OAUTH_EC_P384_PRIVATE_KEY`     | ECDSA P-384 private key for ES384                        |
+| `OAUTH_EC_P521_PRIVATE_KEY`     | ECDSA P-521 private key for ES512                        |
+| `OAUTH_EDDSA_PRIVATE_KEY`       | Ed25519 private key for EdDSA                            |
+| `OAUTH_RSA_KEY_ID`              | Key ID for RSA keys (included in JWT `kid` header)       |
+| `OAUTH_EC_P256_KEY_ID`          | Key ID for EC P-256 key (JWT `kid` header)               |
+| `OAUTH_EC_P384_KEY_ID`          | Key ID for EC P-384 key (JWT `kid` header)               |
+| `OAUTH_EC_P521_KEY_ID`          | Key ID for EC P-521 key (JWT `kid` header)               |
+| `OAUTH_EDDSA_KEY_ID`            | Key ID for EdDSA key (JWT `kid` header)                  |
+| `OAUTH_ACCESS_TOKEN_EXPIRES_IN` | Default access token lifetime in seconds (default: 3600) |
 
 ### APP_KEY
 
