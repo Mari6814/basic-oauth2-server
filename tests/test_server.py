@@ -254,6 +254,34 @@ def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
     assert data["error"] == "invalid_audience"
 
 
+def test_token_endpoint_audience_when_none_configured(temp_db: str) -> None:
+    """Requesting an audience when the client has none configured should fail."""
+    create_client(
+        db_path=temp_db,
+        client_id="no-aud-client",
+        client_secret=b"no-aud-secret",
+        algorithm=SymmetricAlgorithm.HS256,
+        signing_secret=b"no-aud-signing-secret-00000",
+    )
+
+    config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+    app = create_app(config)
+    tc = TestClient(app)
+
+    resp = tc.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "no-aud-client",
+            "client_secret": b64("no-aud-secret"),
+            "audience": "https://any.example.com",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["error"] == "invalid_audience"
+
+
 # Test keys directory
 KEYS_DIR = Path(__file__).parent / "keys"
 
