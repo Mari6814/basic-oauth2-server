@@ -12,18 +12,17 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 8080
     db_path: str = "./oauth.db"
-    app_url: str | None = None  # Issuer URL for JWT 'iss' claim
-    # Private keys for asymmetric algorithms (each algorithm family needs its own key)
-    rsa_private_key: str | None = None  # For RS256, RS384, RS512, PS256, PS384, PS512
-    ec_p256_private_key: str | None = None  # For ES256
-    ec_p384_private_key: str | None = None  # For ES384
-    ec_p521_private_key: str | None = None  # For ES512
-    eddsa_private_key: str | None = None  # For EdDSA
-    # These will be added to the JWT 'kid' header and the jwks.json 'kid' field if set
+    app_url: str | None = None
+    token_expires_in: int = 3600
+    rsa_private_key: str | None = None
     rsa_key_id: str | None = None
+    ec_p256_private_key: str | None = None
     ec_p256_key_id: str | None = None
+    ec_p384_private_key: str | None = None
     ec_p384_key_id: str | None = None
+    ec_p521_private_key: str | None = None
     ec_p521_key_id: str | None = None
+    eddsa_private_key: str | None = None
     eddsa_key_id: str | None = None
 
     @classmethod
@@ -34,6 +33,9 @@ class ServerConfig:
             port=int(os.environ.get("OAUTH_PORT", "8080")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
             app_url=os.environ.get("APP_URL"),
+            token_expires_in=int(
+                os.environ.get("OAUTH_ACCESS_TOKEN_EXPIRES_IN", "3600")
+            ),
             rsa_private_key=os.environ.get("OAUTH_RSA_PRIVATE_KEY"),
             ec_p256_private_key=os.environ.get("OAUTH_EC_P256_PRIVATE_KEY"),
             ec_p384_private_key=os.environ.get("OAUTH_EC_P384_PRIVATE_KEY"),
