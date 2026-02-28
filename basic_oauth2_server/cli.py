@@ -14,7 +14,7 @@ from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 from basic_oauth2_server.db import create_client
 from basic_oauth2_server.db import list_clients
 from basic_oauth2_server.db import delete_client
-from basic_oauth2_server.jwt import get_algorithm, is_symmetric
+from basic_oauth2_server.jwt import get_algorithm
 from basic_oauth2_server.secrets import parse_secret
 from basic_oauth2_server.config import AdminConfig, ServerConfig
 
@@ -290,7 +290,7 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
             if args.signing_secret
             else secrets.token_bytes(32)
         )
-        if algorithm and is_symmetric(algorithm)
+        if algorithm and isinstance(algorithm, SymmetricAlgorithm)
         else None
     )
 
@@ -311,7 +311,11 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
     if not args.client_secret and client_secret:
         # print if we auto-generated the client secret, but not if it was provided by the user
         print(f"OAUTH_CLIENT_SECRET={base64.b64encode(client_secret).decode()}")
-    if is_symmetric(algorithm) and not args.signing_secret and signing_secret:
+    if (
+        isinstance(algorithm, SymmetricAlgorithm)
+        and not args.signing_secret
+        and signing_secret
+    ):
         # print if we auto-generated the signing secret, but not if it was provided by the user
         print(f"JWT_ALGORITHM={algorithm.name}")
         print(f'JWT_SECRET="hex:{signing_secret.hex()}"')

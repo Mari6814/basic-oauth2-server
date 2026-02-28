@@ -27,11 +27,6 @@ def get_algorithm(alg: str) -> Algorithm:
     raise ValueError(f"Unsupported algorithm: {alg}")
 
 
-def is_symmetric(algorithm: Algorithm) -> bool:
-    """Check if an algorithm enum is symmetric (HMAC-based)."""
-    return isinstance(algorithm, SymmetricAlgorithm)
-
-
 def create_jwt(
     claims: dict[str, Any],
     algorithm: Algorithm,

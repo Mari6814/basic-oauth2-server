@@ -17,7 +17,7 @@ from basic_oauth2_server.db import (
     init_db,
     list_clients,
 )
-from basic_oauth2_server.jwt import get_algorithm, is_symmetric
+from basic_oauth2_server.jwt import get_algorithm
 
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
@@ -65,7 +65,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             raise ValueError("Algorithm is required")
 
         algorithm_enum = get_algorithm(algorithm)
-        if is_symmetric(algorithm_enum) and not signing_secret:
+        if isinstance(algorithm_enum, SymmetricAlgorithm) and not signing_secret:
             raise ValueError(f"Signing secret is required for {algorithm}")
 
         signing_secret_bytes: bytes | None = None
@@ -107,7 +107,8 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
                         f"JWT_ALGORITHM={algorithm_enum.name}",
                     ]
-                    if is_symmetric(algorithm_enum) and signing_secret_bytes
+                    if isinstance(algorithm_enum, SymmetricAlgorithm)
+                    and signing_secret_bytes
                     else []
                 )
                 + [

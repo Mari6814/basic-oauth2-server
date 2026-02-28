@@ -10,7 +10,6 @@ from basic_oauth2_server.access_token import create_access_token
 from basic_oauth2_server.jwt import (
     create_jwt,
     get_algorithm,
-    is_symmetric,
 )
 
 
@@ -24,11 +23,11 @@ def _b64url_decode(data: str) -> bytes:
 
 def test_is_symmetric() -> None:
     """Test algorithm classification."""
-    assert is_symmetric(SymmetricAlgorithm.HS256) is True
-    assert is_symmetric(SymmetricAlgorithm.HS384) is True
-    assert is_symmetric(SymmetricAlgorithm.HS512) is True
-    assert is_symmetric(AsymmetricAlgorithm.RS256) is False
-    assert is_symmetric(AsymmetricAlgorithm.EdDSA) is False
+    assert isinstance(SymmetricAlgorithm.HS256, SymmetricAlgorithm) is True
+    assert isinstance(SymmetricAlgorithm.HS384, SymmetricAlgorithm) is True
+    assert isinstance(SymmetricAlgorithm.HS512, SymmetricAlgorithm) is True
+    assert isinstance(AsymmetricAlgorithm.RS256, SymmetricAlgorithm) is False
+    assert isinstance(AsymmetricAlgorithm.EdDSA, SymmetricAlgorithm) is False
 
 
 def test_get_algorithm() -> None:
