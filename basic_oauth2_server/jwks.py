@@ -21,7 +21,7 @@ def _try_add_jwk(
 ) -> None:
     """Parse a private key and append its public JWK to the list."""
     try:
-        private_key_bytes = decode_prefixed_utf8(private_key_str)
+        private_key_bytes = decode_prefixed_utf8(private_key_str, allow_from_file=True)
         jwk = dict(algorithm.to_jwk(private_key_bytes))
         if not include_alg:
             jwk.pop("alg", None)

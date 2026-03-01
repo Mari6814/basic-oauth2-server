@@ -279,14 +279,14 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
     algorithm = get_algorithm(args.algorithm) or SymmetricAlgorithm.HS256
 
     client_secret = (
-        decode_prefixed_utf8(args.client_secret)
+        decode_prefixed_utf8(args.client_secret, allow_from_file=True)
         if args.client_secret
         else secrets.token_bytes(32)
     )
 
     signing_secret = (
         (
-            decode_prefixed_utf8(args.signing_secret)
+            decode_prefixed_utf8(args.signing_secret, allow_from_file=True)
             if args.signing_secret
             else secrets.token_bytes(32)
         )

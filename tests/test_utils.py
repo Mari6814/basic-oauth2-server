@@ -42,7 +42,7 @@ def test_decode_file(tmp_path: Path) -> None:
     """Test parsing bytes from files."""
     file_path = tmp_path / "secret.txt"
     file_path.write_text("file-secret")
-    result = decode_prefixed_utf8(f"@{file_path}")
+    result = decode_prefixed_utf8(f"@{file_path}", allow_from_file=True)
     assert result == b"file-secret"
 
 
@@ -51,7 +51,7 @@ def test_decode_file_binary(tmp_path: Path) -> None:
     binary_data = b"\x00\xffbinary-\x00-secret\xff\x00"
     file_path = tmp_path / "secret.bin"
     file_path.write_bytes(binary_data)
-    result = decode_prefixed_utf8(f"@{file_path}")
+    result = decode_prefixed_utf8(f"@{file_path}", allow_from_file=True)
     assert result == binary_data
 
 
@@ -70,13 +70,13 @@ def test_decode_invalid_hex() -> None:
 def test_decode_file_not_found() -> None:
     """Test that missing file raises an error."""
     with pytest.raises(FileNotFoundError):
-        decode_prefixed_utf8("@/nonexistent/path/to/secret.txt")
+        decode_prefixed_utf8("@/nonexistent/path/to/secret.txt", allow_from_file=True)
 
 
 def test_reject_file_when_not_allowed() -> None:
     """Test that file input is rejected when allow_from_file is False."""
     with pytest.raises(ValueError, match="Reading from file has been disabled"):
-        decode_prefixed_utf8("@somefile.txt", allow_from_file=False)
+        decode_prefixed_utf8("@somefile.txt")
 
 
 def test_decode_empty_hex() -> None:

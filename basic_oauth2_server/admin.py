@@ -57,7 +57,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         if not client_secret:
             raise ValueError("Client secret is required")
 
-        client_secret_bytes = decode_prefixed_utf8(client_secret, allow_from_file=False)
+        client_secret_bytes = decode_prefixed_utf8(client_secret)
         if not client_secret_bytes:
             raise ValueError("Client secret bytes cannot be empty")
 
@@ -70,9 +70,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
 
         signing_secret_bytes: bytes | None = None
         if signing_secret:
-            signing_secret_bytes = decode_prefixed_utf8(
-                signing_secret, allow_from_file=False
-            )
+            signing_secret_bytes = decode_prefixed_utf8(signing_secret)
 
         existing = get_client(config.db_path, client_id)
         if existing:

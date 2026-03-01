@@ -206,7 +206,7 @@ def _create_token_for_client(
                 f"Set the appropriate --*-private-key option or environment variable."
             )
         # TODO: Use functools cache to load key from file
-        private_key = decode_prefixed_utf8(private_key_str)
+        private_key = decode_prefixed_utf8(private_key_str, allow_from_file=True)
         return create_access_token(
             client_id=client.client_id,
             algorithm=algorithm,

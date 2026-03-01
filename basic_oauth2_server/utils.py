@@ -4,7 +4,7 @@ import base64
 from pathlib import Path
 
 
-def decode_prefixed_utf8(value: str, allow_from_file: bool = True) -> bytes:
+def decode_prefixed_utf8(value: str, allow_from_file: bool = False) -> bytes:
     """
     Parse a value from various encodings into bytes.
 
@@ -15,7 +15,7 @@ def decode_prefixed_utf8(value: str, allow_from_file: bool = True) -> bytes:
             - ``base64url:<base64url string>``: URL-safe base64 encoded value. Padding is optional. May silently ignore non-URL-safe characters.
             - ``hex:<hex string>`` or ``0x<hex string>``: Hexadecimal encoded value
             - else: Treated as plain text and encoded as UTF-8 bytes
-        allow_from_file: Whether to allow reading from files (default: True).
+        allow_from_file: Whether to allow reading from files.
 
     Returns:
         Decoded bytes from the input string.
