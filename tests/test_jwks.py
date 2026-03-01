@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import init_db
+from basic_oauth2_server.db import Database
 from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.server import create_app
 
@@ -32,7 +32,8 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     """Create a temporary database for testing."""
     db_path = tmp_path / "test_oauth.db"
     os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890").decode()
-    init_db(str(db_path))
+    db = Database(str(db_path))
+    db.create_tables()
     yield str(db_path)
 
 

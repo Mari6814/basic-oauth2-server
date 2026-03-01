@@ -40,7 +40,7 @@ def build_jwks(config: ServerConfig) -> dict[str, list[dict[str, Any]]]:
 
     Returns:
         A dict of the form {"keys": [...]}, where each entry is a JWK
-        representing the public key. The ``kid`` field is included when
+        representing the public key. The `kid` field is included when
         a key ID is configured.
     """
     keys: list[dict[str, Any]] = []

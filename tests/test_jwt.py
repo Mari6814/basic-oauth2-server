@@ -6,7 +6,7 @@ import json
 import pytest
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
-from basic_oauth2_server.access_token import create_access_token
+from basic_oauth2_server.token_service import create_access_token
 from basic_oauth2_server.jwt import (
     create_jwt,
     get_algorithm,

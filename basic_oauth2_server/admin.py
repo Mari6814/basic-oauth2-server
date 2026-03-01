@@ -11,22 +11,21 @@ import gradio as gr
 
 from basic_oauth2_server.config import AdminConfig
 from basic_oauth2_server.db import (
-    create_client,
-    delete_client,
-    get_client,
-    init_db,
-    list_clients,
+    Database,
+    ClientRepository,
 )
 from basic_oauth2_server.jwt import get_algorithm
 
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
     """Create the Gradio admin application."""
-    init_db(config.db_path)
+    db = Database(config.db_path)
+    db.create_tables()
 
     def refresh_clients() -> list[list[str]]:
         """Refresh the clients table."""
-        clients = list_clients(config.db_path)
+        with db.session() as session:
+            clients = ClientRepository(session).list_all()
         return [
             [
                 c.client_id,
@@ -72,67 +71,71 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         if signing_secret:
             signing_secret_bytes = parse_secret(signing_secret, allow_from_file=False)
 
-        existing = get_client(config.db_path, client_id)
-        if existing:
-            return f"Error: Client '{client_id}' already exists", refresh_clients()
+        with db.session() as session:
+            repo = ClientRepository(session)
+            existing = repo.get(client_id)
+            if existing:
+                return f"Error: Client '{client_id}' already exists", refresh_clients()
 
-        try:
-            scopes_list = [s.strip() for s in scopes.split(",") if s.strip()] or None
-            audiences_list = [
-                a.strip() for a in audiences.split(",") if a.strip()
-            ] or None
+            try:
+                scopes_list = [
+                    s.strip() for s in scopes.split(",") if s.strip()
+                ] or None
+                audiences_list = [
+                    a.strip() for a in audiences.split(",") if a.strip()
+                ] or None
 
-            _client = create_client(
-                db_path=config.db_path,
-                client_id=client_id,
-                client_secret=client_secret_bytes,
-                algorithm=algorithm_enum,
-                signing_secret=signing_secret_bytes,
-                scopes=scopes_list,
-                audiences=audiences_list,
-            )
-
-            # Convert to base64 for example usage below. Reason: OAuth2 clients typically need to send the secret base64-encoded.
-            client_secret_base64 = base64.b64encode(client_secret_bytes).decode()
-
-            msg = "\n".join(
-                [
-                    "Environment variables to use this client:",
-                    "",
-                    f"OAUTH_CLIENT_ID={client_id}",
-                    f"OAUTH_CLIENT_SECRET={client_secret_base64}",
-                ]
-                + (
-                    [
-                        f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
-                        f"JWT_ALGORITHM={algorithm_enum.name}",
-                    ]
-                    if isinstance(algorithm_enum, SymmetricAlgorithm)
-                    and signing_secret_bytes
-                    else []
+                _client = repo.create(
+                    client_id=client_id,
+                    client_secret=client_secret_bytes,
+                    algorithm=algorithm_enum,
+                    signing_secret=signing_secret_bytes,
+                    scopes=scopes_list,
+                    audiences=audiences_list,
                 )
-                + [
-                    "",
-                    "Example curl command:",
-                    "",
-                    f"curl {config.app_url or 'APP_URL'}/oauth2/token \\\n"
-                    f'\t-u "{client_id}:{client_secret_base64}" \\\n'
-                    f'\t-d "grant_type=client_credentials"',
-                ],
-            )
-            return msg, refresh_clients()
-        except Exception as e:
-            return f"Error: {e}", refresh_clients()
+
+                # Convert to base64 for example usage below. Reason: OAuth2 clients typically need to send the secret base64-encoded.
+                client_secret_base64 = base64.b64encode(client_secret_bytes).decode()
+
+                msg = "\n".join(
+                    [
+                        "Environment variables to use this client:",
+                        "",
+                        f"OAUTH_CLIENT_ID={client_id}",
+                        f"OAUTH_CLIENT_SECRET={client_secret_base64}",
+                    ]
+                    + (
+                        [
+                            f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
+                            f"JWT_ALGORITHM={algorithm_enum.name}",
+                        ]
+                        if isinstance(algorithm_enum, SymmetricAlgorithm)
+                        and signing_secret_bytes
+                        else []
+                    )
+                    + [
+                        "",
+                        "Example curl command:",
+                        "",
+                        f"curl {config.app_url or 'APP_URL'}/oauth2/token \\\n"
+                        f'\t-u "{client_id}:{client_secret_base64}" \\\n'
+                        f'\t-d "grant_type=client_credentials"',
+                    ],
+                )
+                return msg, refresh_clients()
+            except Exception as e:
+                return f"Error: {e}", refresh_clients()
 
     def remove_client(client_id: str) -> tuple[str, list[list[str]]]:
         """Delete a client."""
         if not client_id:
             return "Error: Client ID is required", refresh_clients()
 
-        if delete_client(config.db_path, client_id):
-            return f"Deleted client '{client_id}'", refresh_clients()
-        else:
-            return f"Error: Client '{client_id}' not found", refresh_clients()
+        with db.session() as session:
+            if ClientRepository(session).delete(client_id):
+                return f"Deleted client '{client_id}'", refresh_clients()
+            else:
+                return f"Error: Client '{client_id}' not found", refresh_clients()
 
     def generate_signing_secret() -> str:
         """Generate a new random signing secret."""

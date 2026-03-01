@@ -11,10 +11,6 @@ from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
 from basic_oauth2_server.jwt import Algorithm
 
-# TODO: Cache sessionmaker result
-# TODO: Allow all repository functions to accept a session in addition to the path
-# TODO: Create the session once when the server config is created
-
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy models."""
@@ -115,58 +111,56 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 
-def get_engine(db_path: str):
-    """Create a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
-    engine = create_engine(f"sqlite:///{db_path}", echo=False)
+class Database:
+    """Central database manager.
 
-    # Apply connection-level pragmas for SQLite to improve safety and performance.
-    if engine.dialect.name == "sqlite":
-        event.listens_for(engine, "connect")(_set_sqlite_pragma)
-
-    return engine
-
-
-def init_db(db_path: str):
-    """Initialize the database, creating tables if needed."""
-    engine = get_engine(str(db_path))
-    Base.metadata.create_all(engine)
-
-
-def get_session(db_path: str) -> Session:
-    """Get a new database session."""
-    engine = get_engine(db_path)
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
-
-
-def get_client(db_path: str, client_id: str) -> Client | None:
-    """Retrieve a client by ID."""
-    with get_session(db_path) as session:
-        return session.get(Client, client_id)
-
-
-def create_client(
-    db_path: str,
-    client_id: str,
-    algorithm: Algorithm,
-    client_secret: bytes | None = None,
-    signing_secret: bytes | None = None,
-    scopes: list[str] | None = None,
-    audiences: list[str] | None = None,
-) -> Client:
-    """Create a new OAuth client.
-
-    Args:
-        db_path: Path to the database.
-        client_id: Unique client identifier.
-        secret: Client secret ("password") for OAuth authentication.
-        algorithm: JWT signing algorithm the client wants (HS256, RS256, EdDSA, etc.).
-        signing_secret: Signing secret for HMAC algorithms (required for HS256, etc.).
-        scopes: List of allowed scopes.
-        audiences: List of allowed audiences.
+    Created once at startup.  Holds the engine and session factory so that
+    every request can cheaply obtain a new `Session` without recreating
+    the connection pool or session maker.
     """
-    init_db(db_path)
-    with get_session(db_path) as session:
+
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._engine = create_engine(f"sqlite:///{db_path}", echo=False)
+
+        if self._engine.dialect.name == "sqlite":
+            event.listens_for(self._engine, "connect")(_set_sqlite_pragma)
+
+        self._session_factory = sessionmaker(bind=self._engine)
+
+    def create_tables(self) -> None:
+        """Create all tables if they don't exist."""
+        Base.metadata.create_all(self._engine)
+
+    def session(self) -> Session:
+        """Create a new database session."""
+        return self._session_factory()
+
+
+class ClientRepository:
+    """Repository for Client CRUD operations.
+
+    Accepts a session and provides domain-level operations
+    without exposing database internals.
+    """
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def get(self, client_id: str) -> Client | None:
+        """Retrieve a client by ID."""
+        return self._session.get(Client, client_id)
+
+    def create(
+        self,
+        client_id: str,
+        algorithm: Algorithm,
+        client_secret: bytes | None = None,
+        signing_secret: bytes | None = None,
+        scopes: list[str] | None = None,
+        audiences: list[str] | None = None,
+    ) -> Client:
+        """Create a new OAuth client."""
         client = Client(
             client_id=client_id,
             algorithm=algorithm.name,
@@ -178,34 +172,27 @@ def create_client(
         if signing_secret:
             client.set_signing_secret(signing_secret)
 
-        session.add(client)
-        session.commit()
-        session.refresh(client)
+        self._session.add(client)
+        self._session.commit()
+        self._session.refresh(client)
         return client
 
+    def list_all(self) -> list[Client]:
+        """List all clients."""
+        return list(self._session.query(Client).all())
 
-def touch_client_last_used(db_path: str, client_id: str) -> None:
-    """Update the last_used_at timestamp for a client."""
-    with get_session(db_path) as session:
-        client = session.get(Client, client_id)
+    def delete(self, client_id: str) -> bool:
+        """Delete a client by ID. Returns True if deleted, False if not found."""
+        client = self._session.get(Client, client_id)
         if client:
-            client.last_used_at = datetime.now(timezone.utc)
-            session.commit()
-
-
-def list_clients(db_path: str) -> list[Client]:
-    """List all clients."""
-    init_db(db_path)
-    with get_session(db_path) as session:
-        return list(session.query(Client).all())
-
-
-def delete_client(db_path: str, client_id: str) -> bool:
-    """Delete a client by ID. Returns True if deleted, False if not found."""
-    with get_session(db_path) as session:
-        client = session.get(Client, client_id)
-        if client:
-            session.delete(client)
-            session.commit()
+            self._session.delete(client)
+            self._session.commit()
             return True
         return False
+
+    def touch_last_used(self, client_id: str) -> None:
+        """Update the last_used_at timestamp for a client."""
+        client = self._session.get(Client, client_id)
+        if client:
+            client.last_used_at = datetime.now(timezone.utc)
+            self._session.commit()

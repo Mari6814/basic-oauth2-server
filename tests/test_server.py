@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import create_client, init_db
+from basic_oauth2_server.db import Database, ClientRepository
 from basic_oauth2_server.server import create_app
 
 
@@ -23,16 +23,24 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     # Set APP_KEY for encryption
     os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890").decode()
 
-    init_db(str(db_path))
+    db = Database(str(db_path))
+    db.create_tables()
     yield str(db_path)
+
+
+def _create_client(db_path: str, **kwargs) -> None:
+    """Test helper: create a client using Database/ClientRepository."""
+    db = Database(db_path)
+    with db.session() as session:
+        ClientRepository(session).create(**kwargs)
 
 
 @pytest.fixture
 def client_with_db(temp_db: str) -> TestClient:
     """Create a test client with a temporary database."""
     # Create a test OAuth client
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="test-client",
         client_secret=b"test-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -93,8 +101,8 @@ def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
 def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
     """A client may request a subset of its configured scopes."""
     # create client with three allowed scopes
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="subset-client",
         client_secret=b"subset-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -204,8 +212,8 @@ def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
 def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     """A client may request any single audience from its configured list."""
     # create client with two allowed audiences
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="audience-client",
         client_secret=b"audience-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -256,8 +264,8 @@ def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
 
 def test_token_endpoint_audience_when_none_configured(temp_db: str) -> None:
     """Requesting an audience when the client has none configured should fail."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="no-aud-client",
         client_secret=b"no-aud-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -289,8 +297,8 @@ KEYS_DIR = Path(__file__).parent / "keys"
 @pytest.fixture
 def client_with_rsa(temp_db: str) -> TestClient:
     """Create a test client using RS256 algorithm."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="rsa-client",
         client_secret=b"rsa-secret",
         algorithm=AsymmetricAlgorithm.RS256,
@@ -309,8 +317,8 @@ def client_with_rsa(temp_db: str) -> TestClient:
 @pytest.fixture
 def client_with_es256(temp_db: str) -> TestClient:
     """Create a test client using ES256 algorithm."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="es256-client",
         client_secret=b"es256-secret",
         algorithm=AsymmetricAlgorithm.ES256,
@@ -329,8 +337,8 @@ def client_with_es256(temp_db: str) -> TestClient:
 @pytest.fixture
 def client_with_es384(temp_db: str) -> TestClient:
     """Create a test client using ES384 algorithm."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="es384-client",
         client_secret=b"es384-secret",
         algorithm=AsymmetricAlgorithm.ES384,
@@ -349,8 +357,8 @@ def client_with_es384(temp_db: str) -> TestClient:
 @pytest.fixture
 def client_with_es512(temp_db: str) -> TestClient:
     """Create a test client using ES512 algorithm."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="es512-client",
         client_secret=b"es512-secret",
         algorithm=AsymmetricAlgorithm.ES512,
@@ -369,8 +377,8 @@ def client_with_es512(temp_db: str) -> TestClient:
 @pytest.fixture
 def client_with_eddsa(temp_db: str) -> TestClient:
     """Create a test client using EdDSA algorithm."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="eddsa-client",
         client_secret=b"eddsa-secret",
         algorithm=AsymmetricAlgorithm.EdDSA,
@@ -410,8 +418,8 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
 @pytest.fixture
 def client_with_ps256(temp_db: str) -> TestClient:
     """Create a test client using PS256 algorithm (RSA-PSS)."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="ps256-client",
         client_secret=b"ps256-secret",
         algorithm=AsymmetricAlgorithm.PS256,
@@ -535,8 +543,8 @@ def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
 @pytest.fixture
 def client_with_key_id(temp_db: str) -> TestClient:
     """Create a test client with key ID configured."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="kid-client",
         client_secret=b"kid-secret",
         algorithm=AsymmetricAlgorithm.RS256,
@@ -578,8 +586,8 @@ def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
 @pytest.fixture
 def client_with_issuer(temp_db: str) -> TestClient:
     """Create a test client with APP_URL configured for issuer."""
-    create_client(
-        db_path=temp_db,
+    _create_client(
+        temp_db,
         client_id="issuer-client",
         client_secret=b"issuer-secret",
         algorithm=SymmetricAlgorithm.HS256,

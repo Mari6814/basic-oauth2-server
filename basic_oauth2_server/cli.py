@@ -11,9 +11,7 @@ import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
-from basic_oauth2_server.db import create_client
-from basic_oauth2_server.db import list_clients
-from basic_oauth2_server.db import delete_client
+from basic_oauth2_server.db import Database, ClientRepository
 from basic_oauth2_server.jwt import get_algorithm
 from basic_oauth2_server.secrets import parse_secret
 from basic_oauth2_server.config import AdminConfig, ServerConfig
@@ -297,15 +295,18 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
     scopes = args.scopes or []
     audiences = args.audiences or []
 
-    client = create_client(
-        db_path=args.db,
-        client_id=args.client_id or str(uuid.uuid4()),
-        client_secret=client_secret,
-        algorithm=algorithm,
-        signing_secret=signing_secret,
-        scopes=scopes,
-        audiences=audiences,
-    )
+    db = Database(args.db)
+    db.create_tables()
+    with db.session() as session:
+        repo = ClientRepository(session)
+        client = repo.create(
+            client_id=args.client_id or str(uuid.uuid4()),
+            client_secret=client_secret,
+            algorithm=algorithm,
+            signing_secret=signing_secret,
+            scopes=scopes,
+            audiences=audiences,
+        )
 
     print(f"OAUTH_CLIENT_ID={client.client_id}")
     if not args.client_secret and client_secret:
@@ -325,7 +326,10 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
 
 def _cmd_clients_list(args: argparse.Namespace) -> int:
     """Handle 'clients list' command."""
-    clients = list_clients(args.db)
+    db = Database(args.db)
+    db.create_tables()
+    with db.session() as session:
+        clients = ClientRepository(session).list_all()
 
     if not clients:
         print("No clients found.")
@@ -352,12 +356,14 @@ def _cmd_clients_list(args: argparse.Namespace) -> int:
 
 def _cmd_clients_delete(args: argparse.Namespace) -> int:
     """Handle 'clients delete' command."""
-    if delete_client(args.db, args.client_id):
-        print(f"Deleted client '{args.client_id}'")
-        return 0
-    else:
-        print(f"Error: Client '{args.client_id}' not found", file=sys.stderr)
-        return 1
+    db = Database(args.db)
+    with db.session() as session:
+        if ClientRepository(session).delete(args.client_id):
+            print(f"Deleted client '{args.client_id}'")
+            return 0
+        else:
+            print(f"Error: Client '{args.client_id}' not found", file=sys.stderr)
+            return 1
 
 
 def _cmd_admin(args: argparse.Namespace) -> int:
