@@ -14,7 +14,7 @@ from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import Client, get_client, init_db, touch_client_last_used
 from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.jwt import create_access_token, get_algorithm
-from basic_oauth2_server.secrets import parse_secret
+from basic_oauth2_server.utils import decode_prefixed_utf8
 
 logger = logging.getLogger(__name__)
 DEFAULT_EXPIRES_IN = 3600
@@ -206,7 +206,7 @@ def _create_token_for_client(
                 f"Set the appropriate --*-private-key option or environment variable."
             )
         # TODO: Use functools cache to load key from file
-        private_key = parse_secret(private_key_str)
+        private_key = decode_prefixed_utf8(private_key_str)
         return create_access_token(
             client_id=client.client_id,
             algorithm=algorithm,

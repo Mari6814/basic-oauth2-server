@@ -15,7 +15,7 @@ from basic_oauth2_server.db import create_client
 from basic_oauth2_server.db import list_clients
 from basic_oauth2_server.db import delete_client
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
-from basic_oauth2_server.secrets import parse_secret
+from basic_oauth2_server.utils import decode_prefixed_utf8
 from basic_oauth2_server.config import AdminConfig, ServerConfig
 
 
@@ -279,14 +279,14 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
     algorithm = get_algorithm(args.algorithm) or SymmetricAlgorithm.HS256
 
     client_secret = (
-        parse_secret(args.client_secret)
+        decode_prefixed_utf8(args.client_secret)
         if args.client_secret
         else secrets.token_bytes(32)
     )
 
     signing_secret = (
         (
-            parse_secret(args.signing_secret)
+            decode_prefixed_utf8(args.signing_secret)
             if args.signing_secret
             else secrets.token_bytes(32)
         )

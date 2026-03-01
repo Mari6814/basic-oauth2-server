@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
-from .secrets import parse_secret
+from .utils import decode_prefixed_utf8
 
 import gradio as gr
 
@@ -57,7 +57,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         if not client_secret:
             raise ValueError("Client secret is required")
 
-        client_secret_bytes = parse_secret(client_secret, allow_from_file=False)
+        client_secret_bytes = decode_prefixed_utf8(client_secret, allow_from_file=False)
         if not client_secret_bytes:
             raise ValueError("Client secret bytes cannot be empty")
 
@@ -70,7 +70,9 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
 
         signing_secret_bytes: bytes | None = None
         if signing_secret:
-            signing_secret_bytes = parse_secret(signing_secret, allow_from_file=False)
+            signing_secret_bytes = decode_prefixed_utf8(
+                signing_secret, allow_from_file=False
+            )
 
         existing = get_client(config.db_path, client_id)
         if existing:
@@ -167,7 +169,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         value=f"base64:{base64.b64encode(secrets.token_bytes(32)).decode()}",
                         label="Client Secret",
                         placeholder="Enter plain-text secret",
-                        info='Used as the "password" for authenticating with this client. Use prefix `base64:`, `0x`, or `hex:` for different encodings. Uses utf-8 encoding by default. Note the OAuth2 requires you to send it base64-encoded!',
+                        info='Used as the "password" for authenticating with this client. Use prefix `base64:`, `base64url:`, `0x`, or `hex:` for different encodings. Uses utf-8 encoding by default. Note the OAuth2 requires you to send it base64-encoded!',
                     )
                     new_algorithm = gr.Dropdown(
                         label="Algorithm",
@@ -180,7 +182,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         label="Signing Secret (required for HS* algorithms)",
                         placeholder="Click 'Generate' or enter your own",
                         value=generate_signing_secret(),
-                        info="Used to sign JWTs. Required for HS256/384/512. Uses utf-8 encoding by default. You can prefix with `base64:`, `hex:`, or `0x` for different encodings.",
+                        info="Used to sign JWTs. Required for HS256/384/512. Uses utf-8 encoding by default. You can prefix with `base64:`, `base64url:`, `hex:`, or `0x` for different encodings.",
                     )
                     generate_secret_btn = gr.Button(
                         "Generate New Signing Secret", size="sm"
