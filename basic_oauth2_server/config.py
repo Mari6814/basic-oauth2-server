@@ -3,9 +3,12 @@
 import os
 from typing import Self
 from dataclasses import dataclass
+from functools import cache
+from jws_algorithms import AsymmetricAlgorithm
+from .utils import decode_prefixed_utf8
 
 
-@dataclass
+@dataclass(frozen=True)
 class ServerConfig:
     """Configuration for the OAuth server."""
 
@@ -26,6 +29,50 @@ class ServerConfig:
     ec_p521_key_id: str | None = None
     eddsa_key_id: str | None = None
     # TODO: Add token expiry env variable
+
+    @cache
+    def load_private_key(self, algorithm: AsymmetricAlgorithm) -> bytes:
+        """Load the appropriate private key for the given algorithm.
+
+        Either parses the raw key from this config or if a file is being referenced,
+        loads the file content and returns it. Caches the result per algorithm to avoid repeated file reads.
+
+        Args:
+            algorithm: The signing algorithm for which to load the private key.
+
+        Returns:
+            The private key bytes to be used for signing JWTs with the given algorithm.
+
+        Raises:
+            ValueError: If no key is configured for the given algorithm or if the file cannot be read.
+        """
+        match algorithm:
+            case (
+                AsymmetricAlgorithm.RS256
+                | AsymmetricAlgorithm.RS384
+                | AsymmetricAlgorithm.RS512
+                | AsymmetricAlgorithm.PS256
+                | AsymmetricAlgorithm.PS384
+                | AsymmetricAlgorithm.PS512
+            ):
+                key_str = self.rsa_private_key
+            case AsymmetricAlgorithm.ES256:
+                key_str = self.ec_p256_private_key
+            case AsymmetricAlgorithm.ES384:
+                key_str = self.ec_p384_private_key
+            case AsymmetricAlgorithm.ES512:
+                key_str = self.ec_p521_private_key
+            case AsymmetricAlgorithm.EdDSA:
+                key_str = self.eddsa_private_key
+            case _:
+                raise ValueError(f"Unsupported algorithm: {algorithm}")
+
+        if not key_str:
+            raise ValueError(
+                f"No private key configured for {algorithm}. "
+                f"Set the appropriate --*-private-key option or environment variable."
+            )
+        return decode_prefixed_utf8(key_str, allow_from_file=True)
 
     @classmethod
     def from_env(cls) -> Self:
