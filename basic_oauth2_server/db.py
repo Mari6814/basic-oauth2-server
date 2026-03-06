@@ -1,10 +1,10 @@
 """Database models and operations using SQLAlchemy."""
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import secrets
 
-from sqlalchemy import DateTime, String, Text, create_engine, Index, event
+from sqlalchemy import Boolean, DateTime, String, Text, create_engine, Index, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from basic_oauth2_server.config import get_app_key
@@ -84,6 +84,84 @@ class Client(Base):
 
 # explicit unique index on client_id (redundant with PK but makes intent clear)
 Index("ix_clients_client_id", Client.client_id, unique=True)
+
+
+class AuthorizationCode(Base):
+    """Stores authorization codes for the authorization_code grant flow."""
+
+    __tablename__ = "authorization_codes"
+
+    code: Mapped[str] = mapped_column(String(128), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The user who authorized the request (from Basic Auth)
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    redirect_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Space-separated scopes
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audience: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # PKCE: code_challenge and method (S256 or plain)
+    code_challenge: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    code_challenge_method: Mapped[str] = mapped_column(
+        String(10), default="S256", nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+Index("ix_auth_codes_client_id", AuthorizationCode.client_id)
+
+
+def create_authorization_code(
+    db_path: str,
+    client_id: str,
+    user_id: str,
+    redirect_uri: str | None,
+    scope: str | None,
+    audience: str | None,
+    state: str | None,
+    code_challenge: str | None,
+    code_challenge_method: str = "S256",
+    expires_in: int = 600,
+) -> str:
+    """Create and store a new authorization code. Returns the code string."""
+    code = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    with get_session(db_path) as session:
+        auth_code = AuthorizationCode(
+            code=code,
+            client_id=client_id,
+            user_id=user_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            audience=audience,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            expires_at=expires_at,
+        )
+        session.add(auth_code)
+        session.commit()
+    return code
+
+
+def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
+    """Retrieve an authorization code record."""
+    with get_session(db_path) as session:
+        return session.get(AuthorizationCode, code)
+
+
+def mark_authorization_code_used(db_path: str, code: str) -> None:
+    """Mark an authorization code as used so it cannot be reused."""
+    with get_session(db_path) as session:
+        auth_code = session.get(AuthorizationCode, code)
+        if auth_code:
+            auth_code.used = True
+            session.commit()
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):
