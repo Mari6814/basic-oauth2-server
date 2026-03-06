@@ -37,6 +37,7 @@ class Client(Base):
     audiences: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Timestamp of last token issuance
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # TODO: Authorized callback urls for authorization code flow, etc.
 
     def verify_client_secret(self, user_secret: bytes) -> bool:
         """Verify that the provided secret matches the stored hash."""
