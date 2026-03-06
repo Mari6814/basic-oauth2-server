@@ -78,7 +78,7 @@ def test_create_access_token() -> None:
     """Test creating an access token."""
     secret = b"testsecret"
     token = create_access_token(
-        client_id="my-app",
+        subject="my-app",
         algorithm=SymmetricAlgorithm.HS256,
         secret=secret,
         scopes=["read", "write"],

@@ -107,7 +107,7 @@ def create_app(config: ServerConfig) -> FastAPI:
                     status_code=400,
                 )
 
-        # Build confirm link with all params preserved
+        # Build confirm link
         confirm_params: dict[str, str] = {
             "client_id": client_id,
             "redirect_uri": redirect_uri,
@@ -221,6 +221,7 @@ def _create_token_for_client(
     client: Client,
     scopes: list[str] | None = None,
     audience: str | None = None,
+    subject: str | None = None,
 ) -> str:
     """Create an access token for the given client.
 
@@ -238,7 +239,7 @@ def _create_token_for_client(
                 f"Client '{client.client_id}' has no signing secret configured"
             )
         return create_access_token(
-            client_id=client.client_id,
+            subject=subject or client.client_id,
             algorithm=algorithm,
             secret=signing_secret,
             scopes=scopes,
@@ -257,7 +258,7 @@ def _create_token_for_client(
         # TODO: Use functools cache to load key from file
         private_key = decode_prefixed_utf8(private_key_str, allow_from_file=True)
         return create_access_token(
-            client_id=client.client_id,
+            subject=subject or client.client_id,
             algorithm=algorithm,
             private_key=private_key,
             scopes=scopes,
@@ -379,6 +380,7 @@ def handle_authorization_code(
             client,
             scopes=scopes,
             audience=auth_code.audience,
+            subject=auth_code.user_id,
         )
         touch_client_last_used(config.db_path, client_id)
         logger.info(

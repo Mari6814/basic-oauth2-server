@@ -84,7 +84,7 @@ def create_jwt(
 
 
 def create_access_token(
-    client_id: str,
+    subject: str,
     algorithm: Algorithm,
     secret: bytes | None = None,
     private_key: bytes | None = None,
@@ -97,7 +97,7 @@ def create_access_token(
     """Create an OAuth access token JWT.
 
     Args:
-        client_id: The client ID (will be the 'sub' claim).
+        subject: Will be added as the 'sub' claim. Usually the client id or user id the token represents.
         algorithm: The signing algorithm.
         secret: The shared secret (for HMAC).
         private_key: The private key (for asymmetric).
@@ -112,7 +112,7 @@ def create_access_token(
     """
     now = int(time.time())
     claims: dict[str, Any] = {
-        "sub": client_id,
+        "sub": subject,
         "iat": now,
         "exp": now + expires_in,
         "jti": str(uuid.uuid4()),
