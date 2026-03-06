@@ -31,20 +31,14 @@ class ServerConfig:
     # TODO: Add token expiry env variable
 
     @cache
-    def load_private_key(self, algorithm: AsymmetricAlgorithm) -> bytes:
-        """Load the appropriate private key for the given algorithm.
-
-        Either parses the raw key from this config or if a file is being referenced,
-        loads the file content and returns it. Caches the result per algorithm to avoid repeated file reads.
-
-        Args:
-            algorithm: The signing algorithm for which to load the private key.
+    def load_private_key(
+        self, algorithm: AsymmetricAlgorithm
+    ) -> tuple[bytes, str | None]:
+        """
+        Load the appropriate private key and key ID for the given algorithm.
 
         Returns:
-            The private key bytes to be used for signing JWTs with the given algorithm.
-
-        Raises:
-            ValueError: If no key is configured for the given algorithm or if the file cannot be read.
+            (private_key_bytes, key_id)
         """
         match algorithm:
             case (
@@ -56,14 +50,19 @@ class ServerConfig:
                 | AsymmetricAlgorithm.PS512
             ):
                 key_str = self.rsa_private_key
+                key_id = self.rsa_key_id
             case AsymmetricAlgorithm.ES256:
                 key_str = self.ec_p256_private_key
+                key_id = self.ec_p256_key_id
             case AsymmetricAlgorithm.ES384:
                 key_str = self.ec_p384_private_key
+                key_id = self.ec_p384_key_id
             case AsymmetricAlgorithm.ES512:
                 key_str = self.ec_p521_private_key
+                key_id = self.ec_p521_key_id
             case AsymmetricAlgorithm.EdDSA:
                 key_str = self.eddsa_private_key
+                key_id = self.eddsa_key_id
             case _:
                 raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -72,7 +71,7 @@ class ServerConfig:
                 f"No private key configured for {algorithm}. "
                 f"Set the appropriate --*-private-key option or environment variable."
             )
-        return decode_prefixed_utf8(key_str, allow_from_file=True)
+        return decode_prefixed_utf8(key_str, allow_from_file=True), key_id
 
     @classmethod
     def from_env(cls) -> Self:
