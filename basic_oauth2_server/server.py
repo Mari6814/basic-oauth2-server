@@ -53,116 +53,26 @@ def create_app(config: ServerConfig) -> FastAPI:
             HTTPBasicCredentials | None, Depends(security)
         ] = None,
     ) -> JSONResponse:
-        """OAuth 2.0 token endpoint for client_credentials grant.
-
-        Supports client authentication via:
-        - HTTP Basic Authorization header (preferred)
-        - Form-encoded client_id and client_secret
-        """
-        if basic_credentials:
-            effective_client_id = basic_credentials.username
-            effective_client_secret = basic_credentials.password
-        elif client_id and client_secret:
-            effective_client_id, effective_client_secret = client_id, client_secret
-        else:
-            return _oauth_error(
-                "invalid_client",
-                "Client authentication failed: missing credentials",
-                status_code=401,
-            )
-        try:
-            effective_client_secret_bytes = base64.b64decode(
-                effective_client_secret, validate=True
-            )
-        except Exception:
-            return _oauth_error(
-                "invalid_client",
-                "Client authentication failed: invalid base64 encoding in secret",
-                status_code=401,
-            )
-
-        if grant_type != "client_credentials":
-            return _oauth_error(
-                "unsupported_grant_type",
-                "Only client_credentials grant type is supported",
-                status_code=400,
-            )
-
-        client = get_client(config.db_path, effective_client_id)
-        if not client:
-            return _oauth_error(
-                "invalid_client",
-                "Client authentication failed",
-                status_code=401,
-            )
-
-        if not client.verify_client_secret(effective_client_secret_bytes):
-            return _oauth_error(
-                "invalid_client",
-                "Client authentication failed",
-                status_code=401,
-            )
-
-        requested_scopes: list[str] = []
-        if scope:
-            requested_scopes = scope.split()
-            allowed_scopes = client.get_scopes_list()
-            invalid_scopes = [
-                scope for scope in requested_scopes if scope not in allowed_scopes
-            ]
-            if invalid_scopes:
-                logger.warning(
-                    "Client %s requested invalid scopes: %s",
-                    effective_client_id,
-                    ", ".join(invalid_scopes),
+        """OAuth 2.0 token endpoint supporting multiple grant types."""
+        match grant_type:
+            case "client_credentials":
+                return handle_client_credentials(
+                    config,
+                    client_id,
+                    client_secret,
+                    scope,
+                    audience,
+                    basic_credentials,
                 )
+            # Add more grant types here
+            case _:
                 return _oauth_error(
-                    "invalid_scope",
-                    "Requested scopes not allowed for this client",
+                    "invalid_grant",
+                    f"Grant type '{grant_type}' is not supported",
                     status_code=400,
                 )
 
-        if audience:
-            allowed_audiences = client.get_audiences_list()
-            if audience not in allowed_audiences:
-                return _oauth_error(
-                    "invalid_audience",
-                    f"Requested audience not allowed for this client: {audience}",
-                    status_code=400,
-                )
-
-        try:
-            access_token = _create_token_for_client(
-                config,
-                client,
-                scopes=requested_scopes if requested_scopes else None,
-                audience=audience,
-            )
-            touch_client_last_used(config.db_path, effective_client_id)
-            logger.info(
-                "Issued token for client: %s (algorithm: %s)",
-                effective_client_id,
-                client.algorithm,
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to create token for client %s: %s", effective_client_id, e
-            )
-            return _oauth_error(
-                "server_error",
-                f"Failed to create token: {e}",
-                status_code=500,
-            )
-
-        response_data = {
-            "access_token": access_token,
-            "token_type": "Bearer",
-            "expires_in": DEFAULT_EXPIRES_IN,
-        }
-        if requested_scopes:
-            response_data["scope"] = " ".join(requested_scopes)
-
-        return JSONResponse(content=response_data)
+    return app
 
     return app
 
@@ -252,6 +162,112 @@ def _oauth_error(error: str, description: str, status_code: int = 400) -> JSONRe
         status_code=status_code,
         content={"error": error, "error_description": description},
     )
+
+
+def handle_client_credentials(
+    config: ServerConfig,
+    client_id: str | None,
+    client_secret: str | None,
+    scope: str | None,
+    audience: str | None,
+    basic_credentials: HTTPBasicCredentials | None,
+) -> JSONResponse:
+    """Handle the client_credentials grant type."""
+    if basic_credentials:
+        effective_client_id = basic_credentials.username
+        effective_client_secret = basic_credentials.password
+    elif client_id and client_secret:
+        effective_client_id, effective_client_secret = client_id, client_secret
+    else:
+        return _oauth_error(
+            "invalid_client",
+            "Client authentication failed: missing credentials",
+            status_code=401,
+        )
+    try:
+        effective_client_secret_bytes = base64.b64decode(
+            effective_client_secret, validate=True
+        )
+    except Exception:
+        return _oauth_error(
+            "invalid_client",
+            "Client authentication failed: invalid base64 encoding in secret",
+            status_code=401,
+        )
+
+    client = get_client(config.db_path, effective_client_id)
+    if not client:
+        return _oauth_error(
+            "invalid_client",
+            "Client authentication failed",
+            status_code=401,
+        )
+
+    if not client.verify_client_secret(effective_client_secret_bytes):
+        return _oauth_error(
+            "invalid_client",
+            "Client authentication failed",
+            status_code=401,
+        )
+
+    requested_scopes: list[str] = []
+    if scope:
+        requested_scopes = scope.split()
+        allowed_scopes = client.get_scopes_list()
+        invalid_scopes = [
+            scope for scope in requested_scopes if scope not in allowed_scopes
+        ]
+        if invalid_scopes:
+            logger.warning(
+                "Client %s requested invalid scopes: %s",
+                effective_client_id,
+                ", ".join(invalid_scopes),
+            )
+            return _oauth_error(
+                "invalid_scope",
+                "Requested scopes not allowed for this client",
+                status_code=400,
+            )
+
+    if audience:
+        allowed_audiences = client.get_audiences_list()
+        if audience not in allowed_audiences:
+            return _oauth_error(
+                "invalid_audience",
+                f"Requested audience not allowed for this client: {audience}",
+                status_code=400,
+            )
+
+    try:
+        access_token = _create_token_for_client(
+            config,
+            client,
+            scopes=requested_scopes if requested_scopes else None,
+            audience=audience,
+        )
+        touch_client_last_used(config.db_path, effective_client_id)
+        logger.info(
+            "Issued token for client: %s (algorithm: %s)",
+            effective_client_id,
+            client.algorithm,
+        )
+    except Exception as e:
+        logger.error("Failed to create token for client %s: %s", effective_client_id, e)
+        return _oauth_error(
+            "server_error",
+            f"Failed to create token: {e}",
+            status_code=500,
+        )
+
+    response_data = {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": DEFAULT_EXPIRES_IN,
+    }
+    if requested_scopes:
+        response_data["scope"] = " ".join(requested_scopes)
+
+    return JSONResponse(content=response_data)
 
 
 def run_server(config: ServerConfig) -> None:
