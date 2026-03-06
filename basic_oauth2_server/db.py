@@ -38,6 +38,7 @@ class Client(Base):
     # Timestamp of last token issuance
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # TODO: Authorized callback urls for authorization code flow, etc.
+    # TODO: For symmetric signing secret, we maybe also should store a user defined key id so that they know which key they gave us.
 
     def verify_client_secret(self, user_secret: bytes) -> bool:
         """Verify that the provided secret matches the stored hash."""
