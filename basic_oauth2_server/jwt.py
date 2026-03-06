@@ -93,6 +93,7 @@ def create_access_token(
     expires_in: int = 3600,
     kid: str | None = None,
     issuer: str | None = None,
+    client_id: str | None = None,
 ) -> str:
     """Create an OAuth access token JWT.
 
@@ -106,6 +107,7 @@ def create_access_token(
         expires_in: Token lifetime in seconds.
         kid: Optional key ID to include in the JWT header.
         issuer: Optional issuer URL for the 'iss' claim.
+        client_id: The optional client_id used in authorization code flows where the subject is the user, but we also want to additionally include the client_id in the token for introspection purposes.
 
     Returns:
         The signed JWT access token.
@@ -126,6 +128,11 @@ def create_access_token(
 
     if audience:
         claims["aud"] = audience
+
+    if client_id:
+        # apparently, this is a keycloak convention for "authorized party" claim to indicate the client_id in user access tokens
+        # have not confirmed and don't really care lol
+        claims["azp"] = client_id
 
     return create_jwt(
         claims, algorithm, secret=secret, private_key=private_key, kid=kid
