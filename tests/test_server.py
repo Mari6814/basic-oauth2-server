@@ -175,7 +175,7 @@ def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> No
     response = client_with_db.post(
         "/oauth2/token",
         data={
-            "grant_type": "authorization_code",
+            "grant_type": "password",
             "client_id": "test-client",
             "client_secret": b64("test-secret"),
         },
