@@ -49,6 +49,8 @@ def create_app(config: ServerConfig) -> FastAPI:
         client_secret: Annotated[str | None, Form()] = None,
         scope: Annotated[str | None, Form()] = None,
         audience: Annotated[str | None, Form()] = None,
+        code: Annotated[str | None, Form()] = None,
+        redirect_uri: Annotated[str | None, Form()] = None,
         basic_credentials: Annotated[
             HTTPBasicCredentials | None, Depends(security)
         ] = None,
@@ -64,15 +66,21 @@ def create_app(config: ServerConfig) -> FastAPI:
                     audience,
                     basic_credentials,
                 )
-            # Add more grant types here
+            case "authorization_code":
+                return handle_authorization_code(
+                    config,
+                    client_id,
+                    client_secret,
+                    code,
+                    redirect_uri,
+                    basic_credentials,
+                )
             case _:
                 return _oauth_error(
                     "invalid_grant",
                     f"Grant type '{grant_type}' is not supported",
                     status_code=400,
                 )
-
-    return app
 
     return app
 
@@ -161,6 +169,23 @@ def _oauth_error(error: str, description: str, status_code: int = 400) -> JSONRe
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "error_description": description},
+    )
+
+
+def handle_authorization_code(
+    config: ServerConfig,
+    client_id: str | None,
+    client_secret: str | None,
+    code: str | None,
+    redirect_uri: str | None,
+    basic_credentials: HTTPBasicCredentials | None,
+) -> JSONResponse:
+    """Stub handler for the authorization_code grant type."""
+    # TODO: Implement full authorization code grant logic
+    return _oauth_error(
+        "invalid_grant",
+        "authorization_code grant is not yet implemented",
+        status_code=400,
     )
 
 
