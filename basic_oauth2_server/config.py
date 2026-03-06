@@ -25,6 +25,7 @@ class ServerConfig:
     ec_p384_key_id: str | None = None
     ec_p521_key_id: str | None = None
     eddsa_key_id: str | None = None
+    # TODO: Add token expiry env variable
 
     @classmethod
     def from_env(cls) -> Self:
