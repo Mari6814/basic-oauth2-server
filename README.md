@@ -107,10 +107,10 @@ basic-oauth2-server serve [options]
 | `--ec-p521-private-key` | `OAUTH_EC_P521_PRIVATE_KEY` | -           | ECDSA P-521 private key for ES512 |
 | `--eddsa-private-key`   | `OAUTH_EDDSA_PRIVATE_KEY`   | -           | Ed25519 private key for EdDSA     |
 | `--rsa-key-id`          | `OAUTH_RSA_KEY_ID`          | -           | Key ID for RSA (JWT `kid` header) |
-| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`      | -           | Key ID for EC P-256 (`kid`)       |
-| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`      | -           | Key ID for EC P-384 (`kid`)       |
-| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -           | Key ID for EC P-521 (`kid`)       |
-| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -           | Key ID for EdDSA (`kid`)          |
+| `--ec-p256-key-id`      | `OAUTH_EC_P256_KEY_ID`      | -           | Key ID for EC P-256               |
+| `--ec-p384-key-id`      | `OAUTH_EC_P384_KEY_ID`      | -           | Key ID for EC P-384               |
+| `--ec-p521-key-id`      | `OAUTH_EC_P521_KEY_ID`      | -           | Key ID for EC P-521               |
+| `--eddsa-key-id`        | `OAUTH_EDDSA_KEY_ID`        | -           | Key ID for EdDSA                  |
 
 **Note:** Private keys are only needed if you have clients using that algorithm. Key IDs are optional and will be included in the JWT header as `kid` when specified. Private key values are treated as file paths by default, or as inline PEM if the value starts with `-----`.
 
