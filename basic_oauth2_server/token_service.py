@@ -18,6 +18,7 @@ def create_access_token_for_client(
     client: Client,
     scopes: list[str] | None = None,
     audience: str | None = None,
+    subject: str | None = None,
 ) -> str:
     """Create an access token for the given client and the current server config.
 
@@ -39,7 +40,7 @@ def create_access_token_for_client(
                 f"Client '{client.client_id}' has no signing secret configured"
             )
         return create_access_token(
-            subject=client.client_id,
+            subject=subject or client.client_id,
             algorithm=algorithm,
             secret=signing_secret,
             scopes=scopes,
@@ -52,7 +53,7 @@ def create_access_token_for_client(
     else:
         private_key, kid = config.load_private_key(algorithm)
         return create_access_token(
-            subject=client.client_id,
+            subject=subject or client.client_id,
             algorithm=algorithm,
             private_key=private_key,
             scopes=scopes,
