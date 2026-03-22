@@ -21,6 +21,7 @@ from basic_oauth2_server.db import (
     mark_authorization_code_used,
     touch_client_last_used,
 )
+from basic_oauth2_server.exceptions import OAuth2Exception
 from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.token_service import create_access_token_for_client
 from .client_credentials_grant import handle_client_credentials
@@ -186,30 +187,37 @@ def create_app(config: ServerConfig) -> FastAPI:
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
-        match grant_type:
-            case "client_credentials":
-                return handle_client_credentials(
-                    config,
-                    client_id,
-                    client_secret,
-                    scope,
-                    audience,
-                    basic_credentials,
-                )
-            case "authorization_code":
-                return handle_authorization_code(
-                    config,
-                    client_id,
-                    code,
-                    redirect_uri,
-                    code_verifier,
-                )
-            case _:
-                return _oauth_error(
-                    "invalid_grant",
-                    f"Grant type '{grant_type}' is not supported",
-                    status_code=400,
-                )
+        try:
+            match grant_type:
+                case "client_credentials":
+                    return handle_client_credentials(
+                        config,
+                        client_id,
+                        client_secret,
+                        scope,
+                        audience,
+                        basic_credentials,
+                    )
+                case "authorization_code":
+                    return handle_authorization_code(
+                        config,
+                        client_id,
+                        code,
+                        redirect_uri,
+                        code_verifier,
+                    )
+                case _:
+                    return _oauth_error(
+                        "invalid_grant",
+                        f"Grant type '{grant_type}' is not supported",
+                        status_code=400,
+                    )
+        except OAuth2Exception as exc:
+            return _oauth_error(
+                exc.error,
+                exc.description or "",
+                status_code=exc.status_code,
+            )
 
     return app
 
