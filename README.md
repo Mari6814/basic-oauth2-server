@@ -6,6 +6,7 @@ A lightweight Python package that implements an OAuth 2.0 client_credentials aut
 
 Sometimes you just need a quick and easy way to spin up an OAuth client credentials server for testing, development, or prototyping.
 I built this to get more familiar with the OAuth 2.0 spec and to have a simple tool for local development that I understand, because I wrote it.
+Of course you should use something better like [oauthlib](https://github.com/oauthlib/oauthlib) or anything else really.
 
 ## Features
 
