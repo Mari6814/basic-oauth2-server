@@ -51,7 +51,10 @@ basic-oauth2-server serve --port 8080 --host localhost
 
 ### 3. Request a token
 
-#### Using urlencoded form data:
+#### Client credentials flow
+Server to server authentication using the client ID and secret to obtain an access token.
+
+##### Using urlencoded form data:
 
 ```bash
 curl -X POST http://localhost:8080/oauth2/token \
@@ -60,13 +63,18 @@ curl -X POST http://localhost:8080/oauth2/token \
   -d "client_secret=$(echo -n 'my-secret' | base64)"
 ```
 
-#### Using Basic Auth header:
+##### Using Basic Auth header:
 
 ```bash
 curl http://localhost:8080/oauth2/token \
   -u "my-app:$(echo -n 'my-secret' | base64)" \
   -d "grant_type=client_credentials"
 ```
+
+#### Authorization code flow
+User to server authentication where a user authorizes the client to access resources on their behalf.
+
+TODO: Add documentation
 
 ## CLI Commands
 
