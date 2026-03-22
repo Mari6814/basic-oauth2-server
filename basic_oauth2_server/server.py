@@ -22,6 +22,7 @@ from basic_oauth2_server.db import (
     touch_client_last_used,
 )
 from basic_oauth2_server.jwks import build_jwks
+from basic_oauth2_server.token_service import create_access_token_for_client
 from .client_credentials_grant import handle_client_credentials
 
 logger = logging.getLogger(__name__)
@@ -293,7 +294,7 @@ def handle_authorization_code(
     scopes = auth_code.scope.split() if auth_code.scope else None
 
     try:
-        access_token = _create_token_for_client(
+        access_token = create_access_token_for_client(
             config,
             client,
             scopes=scopes,
