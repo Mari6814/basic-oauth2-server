@@ -18,7 +18,23 @@ class Base(DeclarativeBase):
     pass
 
 
-class Client(Base):
+class TimestampMixin:
+    """Mixin that adds auto-managed created_at and updated_at columns."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class Client(TimestampMixin, Base):
     """OAuth client model."""
 
     __tablename__ = "clients"
@@ -88,7 +104,7 @@ class Client(Base):
 Index("ix_clients_client_id", Client.client_id, unique=True)
 
 
-class AuthorizationCode(Base):
+class AuthorizationCode(TimestampMixin, Base):
     """Stores authorization codes for the authorization_code grant flow."""
 
     __tablename__ = "authorization_codes"
@@ -109,9 +125,6 @@ class AuthorizationCode(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
-    )
 
 
 Index("ix_auth_codes_client_id", AuthorizationCode.client_id)
