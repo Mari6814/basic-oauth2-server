@@ -11,6 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import init_db
 from basic_oauth2_server.exceptions import (
+    InvalidClientException,
     InvalidGrantException,
     InvalidRequestException,
     OAuth2Exception,
@@ -138,21 +139,31 @@ def create_app(config: ServerConfig) -> FastAPI:
         code: Annotated[str | None, Form()] = None,
         redirect_uri: Annotated[str | None, Form()] = None,
         code_verifier: Annotated[str | None, Form()] = None,
-        basic_credentials: Annotated[
+        client_credentials: Annotated[
             HTTPBasicCredentials | None, Depends(security)
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
         match grant_type:
             case "client_credentials":
-                return handle_client_credentials(
-                    config,
-                    client_id,
-                    client_secret,
-                    scope,
-                    audience,
-                    basic_credentials,
+                effective_client_id = (
+                    client_credentials.username if client_credentials else client_id
                 )
+                effective_client_secret = (
+                    client_credentials.password if client_credentials else client_secret
+                )
+                if not effective_client_id or not effective_client_secret:
+                    raise InvalidClientException(
+                        "Client authentication failed: missing credentials"
+                    )
+                client_credentials_data = handle_client_credentials(
+                    config=config,
+                    client_id=effective_client_id,
+                    client_secret=effective_client_secret,
+                    scope=scope,
+                    audience=audience,
+                )
+                return JSONResponse(content=client_credentials_data)
             case "authorization_code":
                 return handle_authorization_code(
                     config,
