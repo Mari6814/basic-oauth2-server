@@ -11,7 +11,6 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import init_db
 from basic_oauth2_server.exceptions import (
-    InvalidClientException,
     InvalidGrantException,
     InvalidRequestException,
     OAuth2Exception,
