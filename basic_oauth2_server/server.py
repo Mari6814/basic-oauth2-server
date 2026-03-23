@@ -165,13 +165,14 @@ def create_app(config: ServerConfig) -> FastAPI:
                 )
                 return JSONResponse(content=client_credentials_data)
             case "authorization_code":
-                return handle_authorization_code(
-                    config,
-                    client_id,
-                    code,
-                    redirect_uri,
-                    code_verifier,
+                authorization_code_data = handle_authorization_code(
+                    config=config,
+                    client_id=client_id,
+                    code=code,
+                    redirect_uri=redirect_uri,
+                    code_verifier=code_verifier,
                 )
+                return JSONResponse(content=authorization_code_data)
             case _:
                 raise InvalidGrantException("Unsupported grant_type")
 

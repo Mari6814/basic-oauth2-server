@@ -2,7 +2,6 @@ import logging
 from typing import Literal
 from urllib.parse import urlencode
 
-from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 import hashlib
 import base64
@@ -167,7 +166,7 @@ def handle_authorization_code(
     code: str | None,
     redirect_uri: str | None,
     code_verifier: str | None,
-) -> JSONResponse:
+) -> dict[Literal["access_token", "token_type", "expires_in", "scope"], str | int]:
     """Handle the authorization_code grant type with PKCE validation."""
     if not code:
         raise InvalidRequestException("Missing authorization code")
@@ -221,15 +220,12 @@ def handle_authorization_code(
         auth_code.user_id,
     )
 
-    response_data: dict[str, str | int] = {
+    return {
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": DEFAULT_EXPIRES_IN,
+        **({"scope": " ".join(scopes)} if scopes else {}),
     }
-    if scopes:
-        response_data["scope"] = " ".join(scopes)
-
-    return JSONResponse(content=response_data)
 
 
 def _verify_pkce(
