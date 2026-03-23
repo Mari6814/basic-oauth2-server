@@ -2,7 +2,7 @@ import logging
 from typing import Literal
 from urllib.parse import urlencode
 
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
 import hashlib
 import base64

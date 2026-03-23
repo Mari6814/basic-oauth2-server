@@ -12,7 +12,6 @@ from jws_algorithms import SymmetricAlgorithm
 from basic_oauth2_server.db import (
     Client,
     AuthorizationCode,
-    User,
     create_client,
     create_authorization_code,
     create_user,
