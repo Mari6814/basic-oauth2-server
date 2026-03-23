@@ -344,3 +344,21 @@ def delete_user(db_path: str, username: str) -> bool:
             session.commit()
             return True
         return False
+
+
+def list_users(db_path: str) -> list[User]:
+    """List all users."""
+    init_db(db_path)
+    with get_session(db_path) as session:
+        return list(session.query(User).all())
+
+
+def update_user_password(db_path: str, username: str, new_password: str) -> bool:
+    """Update a user's password. Returns True if updated, False if not found."""
+    with get_session(db_path) as session:
+        user = session.get(User, username)
+        if not user:
+            return False
+        user.set_password(new_password)
+        session.commit()
+        return True

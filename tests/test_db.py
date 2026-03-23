@@ -22,6 +22,8 @@ from basic_oauth2_server.db import (
     get_session,
     get_user,
     init_db,
+    list_users,
+    update_user_password,
 )
 
 
@@ -245,3 +247,29 @@ class TestUser:
         assert user is not None
         assert before <= _ensure_utc(user.created_at) <= after
         assert before <= _ensure_utc(user.updated_at) <= after
+
+    def test_list_users_empty(self, db_path: str) -> None:
+        """list_users returns an empty list when no users exist."""
+        assert list_users(db_path) == []
+
+    def test_list_users_returns_all(self, db_path: str) -> None:
+        """list_users returns every created user."""
+        create_user(db_path, "user1", "pw1")
+        create_user(db_path, "user2", "pw2")
+        users = list_users(db_path)
+        usernames = {u.username for u in users}
+        assert usernames == {"user1", "user2"}
+
+    def test_update_user_password_succeeds(self, db_path: str) -> None:
+        """update_user_password returns True and the new password verifies correctly."""
+        create_user(db_path, "grace", "old-pw")
+        result = update_user_password(db_path, "grace", "new-pw")
+        assert result is True
+        user = get_user(db_path, "grace")
+        assert user is not None
+        assert user.verify_password("new-pw") is True
+        assert user.verify_password("old-pw") is False
+
+    def test_update_user_password_returns_false_for_missing(self, db_path: str) -> None:
+        """update_user_password returns False when the username does not exist."""
+        assert update_user_password(db_path, "ghost", "pw") is False
