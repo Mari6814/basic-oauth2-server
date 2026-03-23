@@ -3,15 +3,18 @@
 import logging
 from typing import Annotated
 
-from fastapi import FastAPI, Form, Depends, Query
+from fastapi import FastAPI, Form, Depends, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy.exc import InvalidRequestError
 
 
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import init_db
-from basic_oauth2_server.exceptions import InvalidGrantException, OAuth2Exception
+from basic_oauth2_server.exceptions import (
+    InvalidGrantException,
+    InvalidRequestException,
+    OAuth2Exception,
+)
 from basic_oauth2_server.jwks import build_jwks
 from .client_credentials_grant import handle_client_credentials
 from .authorization_code_grant import (
@@ -37,6 +40,30 @@ def create_app(config: ServerConfig) -> FastAPI:
     jwks_document = build_jwks(config)
     logger.info("OAuth server initialized with db: %s", config.db_path)
 
+    @app.exception_handler(OAuth2Exception)
+    async def oauth_exception_handler(
+        request: Request, exc: OAuth2Exception
+    ) -> JSONResponse:
+        if exc.status_code not in [401, 403]:
+            logger.warning(
+                "OAuth error: %s (%s) - %s",
+                exc.error,
+                exc.status_code,
+                exc.description,
+            )
+        return _oauth_error(
+            exc.error, exc.description or "", status_code=exc.status_code
+        )
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        logger.error("Unexpected error: %s", exc)
+        return _oauth_error(
+            "server_error", "An unexpected error occurred", status_code=500
+        )
+
     @app.get("/.well-known/jwks.json")
     async def jwks_endpoint() -> JSONResponse:
         """Serve the JSON Web Key Set for configured asymmetric keys."""
@@ -59,41 +86,20 @@ def create_app(config: ServerConfig) -> FastAPI:
         Returns a JSON consent page with a confirm link.
         """
         # TODO: Use the `user`-object to authenticate the user (separate from client)
-        try:
-            if response_type != "code":
-                raise InvalidRequestError("Unsupported response_type")
-            consent_data = handle_authorize(
-                client_id=client_id,
-                redirect_uri=redirect_uri,
-                code_challenge=code_challenge,
-                code_challenge_method=code_challenge_method,
-                scope=scope.split() if scope else None,
-                audience=audience,
-                state=state,
-                username=user.username,
-                config=config,
-            )
-            return JSONResponse(content=consent_data)
-        except OAuth2Exception as exc:
-            if exc.status_code not in [401, 403]:
-                logger.warning(
-                    "OAuth error in authorize endpoint: %s (%s) - %s",
-                    exc.error,
-                    exc.status_code,
-                    exc.description,
-                )
-            return _oauth_error(
-                exc.error,
-                exc.description or "",
-                status_code=exc.status_code,
-            )
-        except Exception as exc:
-            logger.error("Unexpected error in authorize endpoint: %s", exc)
-            return _oauth_error(
-                "server_error",
-                "An unexpected error occurred",
-                status_code=500,
-            )
+        if response_type != "code":
+            raise InvalidRequestException("Unsupported response_type")
+        consent_data = handle_authorize(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            scope=scope.split() if scope else None,
+            audience=audience,
+            state=state,
+            username=user.username,
+            config=config,
+        )
+        return JSONResponse(content=consent_data)
 
     @app.get("/authorize/confirm")
     async def authorize_confirm(
@@ -105,43 +111,22 @@ def create_app(config: ServerConfig) -> FastAPI:
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
         state: Annotated[str | None, Query()] = None,
-    ):
+    ) -> RedirectResponse:
         """Consent confirmation endpoint. Generates an auth code and redirects."""
         # TODO: Either use the `user`-objec to authenticate or require that this endpoint is handled via session cookies after the initial auth.
-        try:
-            redirect_url = handle_authorize_confirm(
-                client_id=client_id,
-                redirect_uri=redirect_uri,
-                code_challenge=code_challenge,
-                code_challenge_method=code_challenge_method,
-                scope=scope.split() if scope else None,
-                audience=audience,
-                state=state,
-                user_username=user.username,
-                user_password=user.password,
-                config=config,
-            )
-            return RedirectResponse(url=redirect_url, status_code=302)
-        except OAuth2Exception as exc:
-            if exc.status_code not in [401, 403]:
-                logger.warning(
-                    "OAuth error in authorize confirm endpoint: %s (%s) - %s",
-                    exc.error,
-                    exc.status_code,
-                    exc.description,
-                )
-            return _oauth_error(
-                exc.error,
-                exc.description or "",
-                status_code=exc.status_code,
-            )
-        except Exception as exc:
-            logger.error("Unexpected error in authorize confirm endpoint: %s", exc)
-            return _oauth_error(
-                "server_error",
-                "An unexpected error occurred",
-                status_code=500,
-            )
+        redirect_url = handle_authorize_confirm(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            scope=scope.split() if scope else None,
+            audience=audience,
+            state=state,
+            user_username=user.username,
+            user_password=user.password,
+            config=config,
+        )
+        return RedirectResponse(url=redirect_url, status_code=302)
 
     @app.post("/oauth2/token")
     async def token_endpoint(
@@ -158,47 +143,26 @@ def create_app(config: ServerConfig) -> FastAPI:
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
-        try:
-            match grant_type:
-                case "client_credentials":
-                    return handle_client_credentials(
-                        config,
-                        client_id,
-                        client_secret,
-                        scope,
-                        audience,
-                        basic_credentials,
-                    )
-                case "authorization_code":
-                    return handle_authorization_code(
-                        config,
-                        client_id,
-                        code,
-                        redirect_uri,
-                        code_verifier,
-                    )
-                case _:
-                    raise InvalidGrantException("Unsupported grant_type")
-        except OAuth2Exception as exc:
-            if exc.status_code not in [401, 403]:
-                logger.warning(
-                    "OAuth error in token endpoint: %s (%s) - %s",
-                    exc.error,
-                    exc.status_code,
-                    exc.description,
+        match grant_type:
+            case "client_credentials":
+                return handle_client_credentials(
+                    config,
+                    client_id,
+                    client_secret,
+                    scope,
+                    audience,
+                    basic_credentials,
                 )
-            return _oauth_error(
-                exc.error,
-                exc.description or "",
-                status_code=exc.status_code,
-            )
-        except Exception as exc:
-            logger.error("Unexpected error in token endpoint: %s", exc)
-            return _oauth_error(
-                "server_error",
-                "An unexpected error occurred",
-                status_code=500,
-            )
+            case "authorization_code":
+                return handle_authorization_code(
+                    config,
+                    client_id,
+                    code,
+                    redirect_uri,
+                    code_verifier,
+                )
+            case _:
+                raise InvalidGrantException("Unsupported grant_type")
 
     return app
 
