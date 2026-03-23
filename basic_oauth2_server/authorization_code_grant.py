@@ -63,7 +63,7 @@ def handle_authorize(
     - client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
     - redirect_uri: The url to send the authorization code to after the user confirms. TODO: Must match the redirect URI registered for the client.
     - code_challenge: The PKCE code challenge from the authorization request.
-    - code_challenge_method: The PKCE code challenge method, either "S256" or "plain".
+    - code_challenge_method: The PKCE code challenge method, either "S256" or "plain". TODO: Allow "S512" as well.
     - scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
     - audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
     - state: PKCE state parameter
