@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
+import getpass
 import os
 import secrets
 import sys
@@ -14,6 +16,11 @@ from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 from basic_oauth2_server.db import create_client
 from basic_oauth2_server.db import list_clients
 from basic_oauth2_server.db import delete_client
+from basic_oauth2_server.db import create_user
+from basic_oauth2_server.db import delete_user
+from basic_oauth2_server.db import get_user
+from basic_oauth2_server.db import list_users
+from basic_oauth2_server.db import update_user_password
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 from basic_oauth2_server.utils import decode_prefixed_utf8
 from basic_oauth2_server.config import AdminConfig, ServerConfig
@@ -163,6 +170,45 @@ def main(args: list[str] | None = None) -> int:
         "-d", "--client-id", required=True, help="Client identifier"
     )
 
+    # users command
+    users_parser = subparsers.add_parser("users", help="Manage users")
+    users_subparsers = users_parser.add_subparsers(
+        dest="users_command", help="User commands"
+    )
+
+    # users create
+    users_create_parser = users_subparsers.add_parser(
+        "create", help="Create a new user"
+    )
+    users_create_parser.add_argument("-u", "--username", required=True, help="Username")
+    users_create_parser.add_argument(
+        "-p",
+        "--password",
+        default=None,
+        help="Leave empty to prompt securely. This option is for automation use cases.",
+    )
+
+    # users list
+    _users_list_parser = users_subparsers.add_parser("list", help="List all users")
+
+    # users delete
+    users_delete_parser = users_subparsers.add_parser("delete", help="Delete a user")
+    users_delete_parser.add_argument("-u", "--username", required=True, help="Username")
+
+    # users update-password
+    users_update_pw_parser = users_subparsers.add_parser(
+        "update-password", help="Update a user's password"
+    )
+    users_update_pw_parser.add_argument(
+        "-u", "--username", required=True, help="Username"
+    )
+    users_update_pw_parser.add_argument(
+        "-p",
+        "--password",
+        default=None,
+        help="Leave empty to prompt securely. This option is for automation use cases.",
+    )
+
     # admin command
     admin_parser = subparsers.add_parser("admin", help="Start the admin dashboard")
     admin_parser.add_argument(
@@ -187,6 +233,8 @@ def main(args: list[str] | None = None) -> int:
         return _cmd_serve(parsed)
     elif parsed.command == "clients":
         return _cmd_clients(parsed)
+    elif parsed.command == "users":
+        return _cmd_users(parsed)
     elif parsed.command == "admin":
         return _cmd_admin(parsed)
 
@@ -354,6 +402,75 @@ def _cmd_clients_delete(args: argparse.Namespace) -> int:
     else:
         print(f"Error: Client '{args.client_id}' not found", file=sys.stderr)
         return 1
+
+
+def _cmd_users(args: argparse.Namespace) -> int:
+    """Handle the 'users' command."""
+    if not args.users_command:
+        print("Usage: basic-oauth2-server users {create,list,delete,update-password}")
+        return 1
+
+    if args.users_command == "create":
+        return _cmd_users_create(args)
+    elif args.users_command == "list":
+        return _cmd_users_list(args)
+    elif args.users_command == "delete":
+        return _cmd_users_delete(args)
+    elif args.users_command == "update-password":
+        return _cmd_users_update_password(args)
+
+    return 0
+
+
+def _cmd_users_create(args: argparse.Namespace) -> int:
+    """Handle 'users create' command."""
+    if get_user(args.db, args.username) is not None:
+        print(f"Error: User '{args.username}' already exists", file=sys.stderr)
+        return 1
+    password = args.password or getpass.getpass("Password: ")
+    create_user(args.db, args.username, password)
+    print(f"Created user '{args.username}'")
+    return 0
+
+
+def _cmd_users_list(args: argparse.Namespace) -> int:
+    """Handle 'users list' command."""
+    users = list_users(args.db)
+    if not users:
+        print("No users found.")
+        return 0
+
+    print(f"{'Username':<36} {'Created'}")
+    print("-" * (36 + 20 + 2))
+    for user in users:
+        print(
+            f"{user.username:<36} {_ensure_utc(user.created_at).strftime('%Y-%m-%d %H:%M')}"
+        )
+    return 0
+
+
+def _cmd_users_delete(args: argparse.Namespace) -> int:
+    """Handle 'users delete' command."""
+    if delete_user(args.db, args.username):
+        print(f"Deleted user '{args.username}'")
+        return 0
+    print(f"Error: User '{args.username}' not found", file=sys.stderr)
+    return 1
+
+
+def _cmd_users_update_password(args: argparse.Namespace) -> int:
+    """Handle 'users update-password' command."""
+    password = args.password or getpass.getpass("New password: ")
+    if update_user_password(args.db, args.username, password):
+        print(f"Updated password for user '{args.username}'")
+        return 0
+    print(f"Error: User '{args.username}' not found", file=sys.stderr)
+    return 1
+
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware in UTC."""
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
 def _cmd_admin(args: argparse.Namespace) -> int:
