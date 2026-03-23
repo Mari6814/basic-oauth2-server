@@ -223,6 +223,7 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 def get_engine(db_path: str):
     """Create a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
+    # TODO: Add lru cache to get_engine
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
     # Apply connection-level pragmas for SQLite to improve safety and performance.
@@ -234,12 +235,14 @@ def get_engine(db_path: str):
 
 def init_db(db_path: str):
     """Initialize the database, creating tables if needed."""
+    # TODO: Add lru cache to init_db
     engine = get_engine(str(db_path))
     Base.metadata.create_all(engine)
 
 
 def get_session(db_path: str) -> Session:
     """Get a new database session."""
+    # TODO: Add lru cache to for the sessionmaker result so we don't create a new engine and sessionmaker every time we need a session
     engine = get_engine(db_path)
     SessionLocal = sessionmaker(bind=engine)
     return SessionLocal()
