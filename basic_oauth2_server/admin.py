@@ -14,7 +14,6 @@ from basic_oauth2_server.db import (
     create_client,
     delete_client,
     get_client,
-    init_db,
     list_clients,
     create_user,
     delete_user,
@@ -27,7 +26,6 @@ from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
     """Create the Gradio admin application."""
-    init_db(config.db_path)
 
     def refresh_clients() -> list[list[str]]:
         """Refresh the clients table."""

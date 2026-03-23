@@ -22,7 +22,6 @@ from .db import (
     get_user,
     list_users,
     update_user_password,
-    init_db,
     get_client,
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
@@ -306,7 +305,6 @@ def main(args: list[str] | None = None) -> int:
 def _ensure_root_client(args: argparse.Namespace) -> None:
     """Create the root OAuth client if it does not already exist."""
     client_id = args.root_client_id
-    init_db(args.db)
     if get_client(args.db, client_id) is not None:
         print(f"Root client '{client_id}' already exists, skipping.")
         return
@@ -377,7 +375,6 @@ def _ensure_root_user(args: argparse.Namespace) -> None:
         f"Password for root user '{username}': "
     )
 
-    init_db(args.db)
     existing = get_user(args.db, username)
     if existing is None:
         create_user(args.db, username, password)

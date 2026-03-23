@@ -1,6 +1,7 @@
 """Database models and operations using SQLAlchemy."""
 
 import bcrypt
+from functools import lru_cache
 import hashlib
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -221,9 +222,9 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 
+@lru_cache
 def get_engine(db_path: str):
-    """Create a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
-    # TODO: Add lru cache to get_engine
+    """Create and cache a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
     # Apply connection-level pragmas for SQLite to improve safety and performance.
@@ -233,19 +234,22 @@ def get_engine(db_path: str):
     return engine
 
 
-def init_db(db_path: str):
-    """Initialize the database, creating tables if needed."""
-    # TODO: Add lru cache to init_db
-    engine = get_engine(str(db_path))
+@lru_cache
+def get_sessionmaker(db_path: str):
+    """Create and cache a sessionmaker, initializing the DB schema on first call."""
+    engine = get_engine(db_path)
     Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine)
+
+
+def init_db(db_path: str) -> None:
+    """Initialize the database, creating tables if needed. Idempotent."""
+    get_sessionmaker(db_path)
 
 
 def get_session(db_path: str) -> Session:
     """Get a new database session."""
-    # TODO: Add lru cache to for the sessionmaker result so we don't create a new engine and sessionmaker every time we need a session
-    engine = get_engine(db_path)
-    SessionLocal = sessionmaker(bind=engine)
-    return SessionLocal()
+    return get_sessionmaker(db_path)()
 
 
 def get_client(db_path: str, client_id: str) -> Client | None:
@@ -274,7 +278,6 @@ def create_client(
         scopes: List of allowed scopes.
         audiences: List of allowed audiences.
     """
-    init_db(db_path)
     with get_session(db_path) as session:
         client = Client(
             client_id=client_id,
@@ -304,7 +307,6 @@ def touch_client_last_used(db_path: str, client_id: str) -> None:
 
 def list_clients(db_path: str) -> list[Client]:
     """List all clients."""
-    init_db(db_path)
     with get_session(db_path) as session:
         return list(session.query(Client).all())
 
@@ -322,7 +324,6 @@ def delete_client(db_path: str, client_id: str) -> bool:
 
 def create_user(db_path: str, username: str, password: str) -> User:
     """Create a new user with a bcrypt-hashed password."""
-    init_db(db_path)
     with get_session(db_path) as session:
         user = User(username=username, password_hash="")
         user.set_password(password)
@@ -351,7 +352,6 @@ def delete_user(db_path: str, username: str) -> bool:
 
 def list_users(db_path: str) -> list[User]:
     """List all users."""
-    init_db(db_path)
     with get_session(db_path) as session:
         return list(session.query(User).all())
 
