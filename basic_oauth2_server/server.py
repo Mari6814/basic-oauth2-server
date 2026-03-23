@@ -51,7 +51,7 @@ def create_app(config: ServerConfig) -> FastAPI:
                 exc.status_code,
                 exc.description,
             )
-        return _oauth_error(
+        return _render_oauth_error(
             exc.error, exc.description or "", status_code=exc.status_code
         )
 
@@ -60,7 +60,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         request: Request, exc: Exception
     ) -> JSONResponse:
         logger.error("Unexpected error: %s", exc)
-        return _oauth_error(
+        return _render_oauth_error(
             "server_error", "An unexpected error occurred", status_code=500
         )
 
@@ -167,8 +167,10 @@ def create_app(config: ServerConfig) -> FastAPI:
     return app
 
 
-def _oauth_error(error: str, description: str, status_code: int = 400) -> JSONResponse:
-    """Return an OAuth error response."""
+def _render_oauth_error(
+    error: str, description: str, status_code: int = 400
+) -> JSONResponse:
+    """Return a JSON response according to what OAuth2 excepts."""
     logger.warning("OAuth error: %s (%s) - %s", error, status_code, description)
     return JSONResponse(
         status_code=status_code,
