@@ -76,15 +76,15 @@ curl http://localhost:8080/oauth2/token \
 ```
 
 #### Authorization code flow
-User-centric authentication where a user explicitly grants a client application access to resources on their behalf. Refer to [RFC 6749 §4.1](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1) and [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636) (PKCE) for the full specification. **PKCE is required.**
+User-centric authentication where a user explicitly grants a client application access to resources on their behalf.
 
 The flow uses these endpoints:
 
-| Endpoint | Description |
-| --- | --- |
-| `GET /authorize` | Initiates the flow. Requires HTTP Basic Auth to identify the user. Returns a JSON consent object with a `confirm_url`. |
-| `GET /authorize/confirm` | The user follows the `confirm_url` to grant consent. Redirects to the client's `redirect_uri` with an authorization code. |
-| `POST /oauth2/token` | Exchanges the authorization code (and PKCE `code_verifier`) for an access token. Same endpoint as the client credentials flow. |
+| Endpoint                 | Description                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /authorize`         | Initiates the flow. Requires HTTP Basic Auth to identify the user. Returns a JSON consent object with a `confirm_url`.         |
+| `GET /authorize/confirm` | The user follows the `confirm_url` to grant consent. Redirects to the client's `redirect_uri` with an authorization code.      |
+| `POST /oauth2/token`     | Exchanges the authorization code (and PKCE `code_verifier`) for an access token. Same endpoint as the client credentials flow. |
 
 Share the `GET /authorize` URL with any client application that needs to initiate the flow on behalf of a user.
 
