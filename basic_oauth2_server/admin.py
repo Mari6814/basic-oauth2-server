@@ -16,6 +16,11 @@ from basic_oauth2_server.db import (
     get_client,
     init_db,
     list_clients,
+    create_user,
+    delete_user,
+    get_user,
+    list_users,
+    update_user_password,
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 
@@ -137,6 +142,59 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         """Generate a new random signing secret."""
         return f"base64:{base64.b64encode(secrets.token_bytes(32)).decode()}"
 
+    def refresh_users() -> list[list[str]]:
+        """Refresh the users table."""
+        users = list_users(config.db_path)
+        return [
+            [
+                u.username,
+                u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "",
+                u.updated_at.strftime("%Y-%m-%d %H:%M") if u.updated_at else "",
+            ]
+            for u in users
+        ]
+
+    def add_user(username: str, password: str) -> tuple[str, list[list[str]]]:
+        """Create a new user."""
+        if not username:
+            return "Error: Username is required", refresh_users()
+        if not password:
+            return "Error: Password is required", refresh_users()
+
+        existing = get_user(config.db_path, username)
+        if existing:
+            return f"Error: User '{username}' already exists", refresh_users()
+
+        try:
+            create_user(config.db_path, username, password)
+            return f"Created user '{username}'", refresh_users()
+        except Exception as e:
+            return f"Error: {e}", refresh_users()
+
+    def remove_user(username: str) -> tuple[str, list[list[str]]]:
+        """Delete a user."""
+        if not username:
+            return "Error: Username is required", refresh_users()
+
+        if delete_user(config.db_path, username):
+            return f"Deleted user '{username}'", refresh_users()
+        else:
+            return f"Error: User '{username}' not found", refresh_users()
+
+    def change_user_password(
+        username: str, password: str
+    ) -> tuple[str, list[list[str]]]:
+        """Update a user's password."""
+        if not username:
+            return "Error: Username is required", refresh_users()
+        if not password:
+            return "Error: New password is required", refresh_users()
+
+        if update_user_password(config.db_path, username, password):
+            return f"Updated password for user '{username}'", refresh_users()
+        else:
+            return f"Error: User '{username}' not found", refresh_users()
+
     with gr.Blocks(title="OAuth Admin Dashboard") as app:
         gr.Markdown("# OAuth Admin Dashboard")
         gr.Markdown("Manage OAuth 2.0 clients for the authorization server.")
@@ -223,6 +281,62 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 fn=remove_client,
                 inputs=[delete_client_id],
                 outputs=[delete_status, clients_table],
+            )
+
+        gr.Markdown("---")
+        gr.Markdown("## Users")
+
+        with gr.Tab("Users"):
+            users_table = gr.Dataframe(
+                headers=["Username", "Created", "Updated"],
+                value=refresh_users(),
+                interactive=False,
+            )
+            refresh_users_btn = gr.Button("Refresh")
+            refresh_users_btn.click(fn=refresh_users, outputs=users_table)
+
+        with gr.Tab("Add User"):
+            with gr.Row():
+                with gr.Column():
+                    new_username = gr.Textbox(label="Username", placeholder="alice")
+                    new_password = gr.Textbox(
+                        label="Password",
+                        placeholder="Enter password",
+                        type="password",
+                    )
+            add_user_status = gr.Textbox(label="Status", interactive=False)
+            add_user_btn = gr.Button("Create User", variant="primary")
+            add_user_btn.click(
+                fn=add_user,
+                inputs=[new_username, new_password],
+                outputs=[add_user_status, users_table],
+            )
+
+        with gr.Tab("Delete User"):
+            delete_username = gr.Textbox(
+                label="Username to Delete", placeholder="alice"
+            )
+            delete_user_status = gr.Textbox(label="Status", interactive=False)
+            delete_user_btn = gr.Button("Delete User", variant="stop")
+            delete_user_btn.click(
+                fn=remove_user,
+                inputs=[delete_username],
+                outputs=[delete_user_status, users_table],
+            )
+
+        with gr.Tab("Update Password"):
+            update_username = gr.Textbox(label="Username", placeholder="alice")
+            update_password = gr.Textbox(
+                label="New Password",
+                placeholder="Enter new password",
+                type="password",
+            )
+            update_pw_status = gr.Textbox(label="Status", interactive=False)
+            update_pw_btn = gr.Button("Update Password", variant="primary")
+            update_pw_btn.click(
+                fn=change_user_password,
+                inputs=[update_username, update_password],
+                outputs=[update_pw_status, users_table],
             )
 
     return app
