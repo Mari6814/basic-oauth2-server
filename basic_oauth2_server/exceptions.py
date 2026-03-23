@@ -17,6 +17,16 @@ class OAuth2Exception(Exception):
         self.status_code = status_code
 
 
+class InvalidRequestException(OAuth2Exception):
+    """Raised when the request is invalid.
+
+    This can be due to missing parameters, invalid parameter values, or any other issue with the request that prevents it from being processed.
+    """
+
+    def __init__(self, description: str | None = None, status_code: int = 400):
+        super().__init__("invalid_request", description, status_code)
+
+
 class InvalidClientException(OAuth2Exception):
     """Raised when client authentication fails.
 
