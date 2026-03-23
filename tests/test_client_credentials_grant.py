@@ -13,6 +13,7 @@ from basic_oauth2_server.db import create_client
 from basic_oauth2_server.exceptions import (
     InvalidAudienceException,
     InvalidClientException,
+    InvalidRequestException,
     InvalidScopeException,
 )
 
@@ -98,7 +99,7 @@ def test_success_with_audience(config: ServerConfig) -> None:
 
 
 def test_missing_credentials_raises(config: ServerConfig) -> None:
-    with pytest.raises(InvalidClientException):
+    with pytest.raises(InvalidRequestException):
         handle_client_credentials(
             config=config,
             client_id=None,
@@ -109,7 +110,7 @@ def test_missing_credentials_raises(config: ServerConfig) -> None:
 
 
 def test_invalid_base64_secret_raises(config: ServerConfig) -> None:
-    with pytest.raises(InvalidClientException):
+    with pytest.raises(InvalidRequestException):
         handle_client_credentials(
             config=config,
             client_id="test-client",

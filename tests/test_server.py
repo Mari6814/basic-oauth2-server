@@ -671,8 +671,8 @@ def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
         data={"grant_type": "client_credentials"},
     )
 
-    assert response.status_code == 401
-    assert response.json()["error"] == "invalid_client"
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
 
 
 def _pkce_pair() -> tuple[str, str]:

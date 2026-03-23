@@ -146,20 +146,16 @@ def create_app(config: ServerConfig) -> FastAPI:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
         match grant_type:
             case "client_credentials":
-                effective_client_id = (
-                    client_credentials.username if client_credentials else client_id
-                )
-                effective_client_secret = (
-                    client_credentials.password if client_credentials else client_secret
-                )
-                if not effective_client_id or not effective_client_secret:
-                    raise InvalidClientException(
-                        "Client authentication failed: missing credentials"
-                    )
                 client_credentials_data = handle_client_credentials(
                     config=config,
-                    client_id=effective_client_id,
-                    client_secret=effective_client_secret,
+                    client_id=(
+                        client_credentials.username if client_credentials else client_id
+                    ),
+                    client_secret=(
+                        client_credentials.password
+                        if client_credentials
+                        else client_secret
+                    ),
                     scope=scope,
                     audience=audience,
                 )
