@@ -363,5 +363,6 @@ def update_user_password(db_path: str, username: str, new_password: str) -> bool
         if not user:
             return False
         user.set_password(new_password)
+        # TODO: Tests have shown that the updated_at timestamp is not updating
         session.commit()
         return True
