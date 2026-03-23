@@ -12,11 +12,15 @@ from jws_algorithms import SymmetricAlgorithm
 from basic_oauth2_server.db import (
     Client,
     AuthorizationCode,
+    User,
     create_client,
     create_authorization_code,
+    create_user,
+    delete_user,
     get_client,
     get_authorization_code,
     get_session,
+    get_user,
     init_db,
 )
 
@@ -186,3 +190,58 @@ class TestAuthorizationCodeTimestamps:
         updated = get_authorization_code(db_path, code)
         assert updated is not None
         assert updated.updated_at >= original_updated_at
+
+
+class TestUser:
+    def test_create_user_stores_hashed_password(self, db_path: str) -> None:
+        """create_user persists the user and stores a bcrypt hash, not the plaintext."""
+        user = create_user(db_path, "alice", "s3cr3t")
+        assert user.username == "alice"
+        assert user.password_hash != "s3cr3t"
+        assert user.password_hash.startswith("$2b$")
+
+    def test_get_user_returns_user(self, db_path: str) -> None:
+        """get_user returns the created user by username."""
+        create_user(db_path, "bob", "pass123")
+        user = get_user(db_path, "bob")
+        assert user is not None
+        assert user.username == "bob"
+
+    def test_get_user_returns_none_for_missing(self, db_path: str) -> None:
+        """get_user returns None when the username does not exist."""
+        assert get_user(db_path, "nobody") is None
+
+    def test_verify_password_correct(self, db_path: str) -> None:
+        """verify_password returns True for the correct password."""
+        create_user(db_path, "carol", "correct-horse")
+        user = get_user(db_path, "carol")
+        assert user is not None
+        assert user.verify_password("correct-horse") is True
+
+    def test_verify_password_wrong(self, db_path: str) -> None:
+        """verify_password returns False for an incorrect password."""
+        create_user(db_path, "dave", "correct-horse")
+        user = get_user(db_path, "dave")
+        assert user is not None
+        assert user.verify_password("wrong-password") is False
+
+    def test_delete_user_returns_true(self, db_path: str) -> None:
+        """delete_user returns True and removes the user."""
+        create_user(db_path, "eve", "pw")
+        assert delete_user(db_path, "eve") is True
+        assert get_user(db_path, "eve") is None
+
+    def test_delete_user_returns_false_when_missing(self, db_path: str) -> None:
+        """delete_user returns False when the user does not exist."""
+        assert delete_user(db_path, "ghost") is False
+
+    def test_timestamps_set_on_create(self, db_path: str) -> None:
+        """created_at and updated_at are populated on user creation."""
+        before = datetime.now(timezone.utc)
+        create_user(db_path, "frank", "pw")
+        after = datetime.now(timezone.utc)
+
+        user = get_user(db_path, "frank")
+        assert user is not None
+        assert before <= _ensure_utc(user.created_at) <= after
+        assert before <= _ensure_utc(user.updated_at) <= after

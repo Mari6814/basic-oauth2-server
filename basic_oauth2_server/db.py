@@ -1,5 +1,6 @@
 """Database models and operations using SQLAlchemy."""
 
+import bcrypt
 import hashlib
 from datetime import datetime, timedelta, timezone
 import secrets
@@ -34,6 +35,9 @@ class TimestampMixin:
     )
 
 
+# TODO: Add & Refactor mixin for expiration
+
+
 class Client(TimestampMixin, Base):
     """OAuth client model."""
 
@@ -54,7 +58,7 @@ class Client(TimestampMixin, Base):
     # Timestamp of last token issuance
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # TODO: Authorized callback urls for authorization code flow, etc.
-    # TODO: For symmetric signing secret, we maybe also should store a user defined key id so that they know which key they gave us.
+    # TODO: Add 'algorithm' accessor that returns the Symmetric|AsymmetricAlgorithm instance based on the stored algorithm name
 
     def verify_client_secret(self, user_secret: bytes) -> bool:
         """Verify that the provided secret matches the stored hash."""
@@ -104,6 +108,26 @@ class Client(TimestampMixin, Base):
 Index("ix_clients_client_id", Client.client_id, unique=True)
 
 
+class User(TimestampMixin, Base):
+    """User model for authorization."""
+
+    __tablename__ = "users"
+
+    username: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+
+    def set_password(self, password: str) -> None:
+        """Hash and store the password using bcrypt."""
+        self.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    def verify_password(self, password: str) -> bool:
+        """Verify that the provided password matches the stored hash."""
+        return bcrypt.checkpw(password.encode(), self.password_hash.encode())
+
+
+Index("ix_users_username", User.username, unique=True)
+
+
 class AuthorizationCode(TimestampMixin, Base):
     """Stores authorization codes for the authorization_code grant flow."""
 
@@ -111,7 +135,7 @@ class AuthorizationCode(TimestampMixin, Base):
 
     code: Mapped[str] = mapped_column(String(128), primary_key=True)
     client_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    # The user who authorized the request (from Basic Auth)
+    # TODO: The user who authorized the request (from Basic Auth). Should be a foreign key to the new users table?
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
     redirect_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Space-separated scopes
@@ -123,6 +147,7 @@ class AuthorizationCode(TimestampMixin, Base):
     code_challenge_method: Mapped[str] = mapped_column(
         String(10), default="S256", nullable=False
     )
+    # TODO: Currently we check the expiration outside of the repository functions. We should move that into the functions of this module.
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -167,6 +192,7 @@ def create_authorization_code(
 def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
     """Retrieve an authorization code record."""
     with get_session(db_path) as session:
+        # TODO: Only get *non-expired* and *unused* codes here instead of external functions
         return session.get(AuthorizationCode, code)
 
 
@@ -286,6 +312,35 @@ def delete_client(db_path: str, client_id: str) -> bool:
         client = session.get(Client, client_id)
         if client:
             session.delete(client)
+            session.commit()
+            return True
+        return False
+
+
+def create_user(db_path: str, username: str, password: str) -> User:
+    """Create a new user with a bcrypt-hashed password."""
+    init_db(db_path)
+    with get_session(db_path) as session:
+        user = User(username=username, password_hash="")
+        user.set_password(password)
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user
+
+
+def get_user(db_path: str, username: str) -> User | None:
+    """Retrieve a user by username."""
+    with get_session(db_path) as session:
+        return session.get(User, username)
+
+
+def delete_user(db_path: str, username: str) -> bool:
+    """Delete a user by username. Returns True if deleted, False if not found."""
+    with get_session(db_path) as session:
+        user = session.get(User, username)
+        if user:
+            session.delete(user)
             session.commit()
             return True
         return False
