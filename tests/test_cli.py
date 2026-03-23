@@ -270,3 +270,258 @@ class TestUsersUpdatePassword:
     def test_no_users_subcommand_returns_1(self, db: str) -> None:
         result = main(["--db", db, "users"])
         assert result == 1
+
+
+class TestServeCreateRootClient:
+    def test_creates_root_client_default_algorithm(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(["--db", db, "serve", "--create-root-client"])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Created root client 'root'" in out
+        assert "OAUTH_ROOT_CLIENT_SECRET=" in out
+        assert "JWT_SECRET=" in out
+        client = get_client(db, "root")
+        assert client is not None
+        assert client.algorithm == "HS256"
+
+    def test_client_secret_not_printed_when_provided(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-secret",
+                    "mysecret",
+                ]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "OAUTH_ROOT_CLIENT_SECRET=" not in out
+        client = get_client(db, "root")
+        assert client is not None
+        assert client.verify_client_secret(b"mysecret")
+
+    def test_skips_if_root_client_already_exists(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            main(["--db", db, "serve", "--create-root-client"])
+        capsys.readouterr()
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(["--db", db, "serve", "--create-root-client"])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "skipping" in out.lower()
+        assert "Created" not in out
+
+    def test_symmetric_prints_jwt_secret_and_algorithm(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-algorithm",
+                    "HS256",
+                ]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "JWT_SECRET=" in out
+        assert "JWT_ALGORITHM=HS256" in out
+
+    def test_symmetric_signing_secret_not_printed_when_provided(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-algorithm",
+                    "HS256",
+                    "--root-client-signing-secret",
+                    "0xdeadbeef",
+                ]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "JWT_SECRET=" not in out
+        client = get_client(db, "root")
+        assert client is not None
+        assert client.get_signing_secret() == bytes.fromhex("deadbeef")
+
+    def test_asymmetric_no_jwt_secret_printed(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-algorithm",
+                    "RS256",
+                ]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "JWT_SECRET=" not in out
+        client = get_client(db, "root")
+        assert client is not None
+        assert client.algorithm == "RS256"
+
+    def test_asymmetric_signing_key_loaded_from_file(
+        self, db: str, tmp_path: Path, capsys: CaptureFixture[str]
+    ) -> None:
+        key_file = tmp_path / "fake.pem"
+        key_file.write_bytes(
+            b"-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----"
+        )
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-algorithm",
+                    "RS256",
+                    "--root-client-signing-secret",
+                    str(key_file),
+                ]
+            )
+        assert result == 0
+        client = get_client(db, "root")
+        assert client is not None
+        assert client.get_signing_secret() == key_file.read_bytes()
+
+    def test_with_custom_id_scopes_and_audiences(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-client",
+                    "--root-client-id",
+                    "myrootclient",
+                    "--root-client-scopes",
+                    "read write",
+                    "--root-client-audiences",
+                    "https://api.example.com",
+                ]
+            )
+        assert result == 0
+        client = get_client(db, "myrootclient")
+        assert client is not None
+        assert "read" in client.get_scopes_list()
+        assert "write" in client.get_scopes_list()
+        assert "https://api.example.com" in client.get_audiences_list()
+
+
+class TestServeCreateRootUser:
+    def test_creates_root_user_with_password_flag(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-user",
+                    "--root-password",
+                    "secret123",
+                ]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Created root user 'root'" in out
+        user = get_user(db, "root")
+        assert user is not None
+        assert user.verify_password("secret123")
+
+    def test_creates_root_user_prompts_when_no_password(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("getpass.getpass", return_value="prompted-pw") as mock_getpass:
+            with patch("basic_oauth2_server.server.run_server"):
+                result = main(["--db", db, "serve", "--create-root-user"])
+        assert result == 0
+        mock_getpass.assert_called_once()
+        user = get_user(db, "root")
+        assert user is not None
+        assert user.verify_password("prompted-pw")
+
+    def test_updates_existing_user_password(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            main(
+                ["--db", db, "serve", "--create-root-user", "--root-password", "old-pw"]
+            )
+        capsys.readouterr()
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                ["--db", db, "serve", "--create-root-user", "--root-password", "new-pw"]
+            )
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Updated root user 'root'" in out
+        user = get_user(db, "root")
+        assert user is not None
+        assert user.verify_password("new-pw")
+        assert not user.verify_password("old-pw")
+
+    def test_updates_existing_user_prompts_when_no_password(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            main(
+                ["--db", db, "serve", "--create-root-user", "--root-password", "old-pw"]
+            )
+        capsys.readouterr()
+        with patch("getpass.getpass", return_value="new-pw-prompted") as mock_getpass:
+            with patch("basic_oauth2_server.server.run_server"):
+                result = main(["--db", db, "serve", "--create-root-user"])
+        assert result == 0
+        mock_getpass.assert_called_once()
+        user = get_user(db, "root")
+        assert user is not None
+        assert user.verify_password("new-pw-prompted")
+        assert not user.verify_password("old-pw")
+
+    def test_with_custom_username(self, db: str, capsys: CaptureFixture[str]) -> None:
+        with patch("basic_oauth2_server.server.run_server"):
+            result = main(
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-root-user",
+                    "--root-username",
+                    "admin",
+                    "--root-password",
+                    "adminpass",
+                ]
+            )
+        assert result == 0
+        user = get_user(db, "admin")
+        assert user is not None
+        assert user.verify_password("adminpass")

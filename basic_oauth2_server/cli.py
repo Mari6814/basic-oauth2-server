@@ -13,14 +13,18 @@ import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
-from basic_oauth2_server.db import create_client
-from basic_oauth2_server.db import list_clients
-from basic_oauth2_server.db import delete_client
-from basic_oauth2_server.db import create_user
-from basic_oauth2_server.db import delete_user
-from basic_oauth2_server.db import get_user
-from basic_oauth2_server.db import list_users
-from basic_oauth2_server.db import update_user_password
+from .db import (
+    create_client,
+    list_clients,
+    delete_client,
+    create_user,
+    delete_user,
+    get_user,
+    list_users,
+    update_user_password,
+    init_db,
+    get_client,
+)
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 from basic_oauth2_server.utils import decode_prefixed_utf8
 from basic_oauth2_server.config import AdminConfig, ServerConfig
@@ -106,6 +110,64 @@ def main(args: list[str] | None = None) -> int:
         "--eddsa-key-id",
         default=os.environ.get("OAUTH_EDDSA_KEY_ID"),
         help="Key ID for EdDSA key (included in JWT header as 'kid')",
+    )
+
+    # Root client bootstrapping
+    serve_parser.add_argument(
+        "--create-root-client",
+        action="store_true",
+        help="Create or update the root OAuth client on startup",
+    )
+    serve_parser.add_argument(
+        "--root-client-id",
+        default="root",
+        help="Client ID for the root client (default: root)",
+    )
+    serve_parser.add_argument(
+        "--root-client-secret",
+        help="Secret for the root client. Supports @file, base64:, 0x formats. Auto-generated and printed if omitted.",
+    )
+    serve_parser.add_argument(
+        "--root-client-algorithm",
+        dest="root_client_algorithm",
+        default="HS256",
+        choices=[alg.name for alg in SymmetricAlgorithm]
+        + [alg.name for alg in AsymmetricAlgorithm],
+        help="JWT signing algorithm for the root client (default: HS256)",
+    )
+    serve_parser.add_argument(
+        "--root-client-signing-secret",
+        dest="root_client_signing_secret",
+        help="Signing key for the root client. For HMAC (HS*): supports @file, base64:, 0x formats; auto-generated and printed if omitted. For asymmetric algorithms: treated as a private key file path by default (same as @file).",
+    )
+    serve_parser.add_argument(
+        "--root-client-scopes",
+        dest="root_client_scopes",
+        action="append",
+        help="Scopes for the root client (space-separated; can be repeated)",
+    )
+    serve_parser.add_argument(
+        "--root-client-audiences",
+        dest="root_client_audiences",
+        action="append",
+        help="Audiences for the root client (space-separated; can be repeated)",
+    )
+
+    # Root user bootstrapping
+    serve_parser.add_argument(
+        "--create-root-user",
+        action="store_true",
+        help="Create or update the root user on startup",
+    )
+    serve_parser.add_argument(
+        "--root-username",
+        default="root",
+        help="Username for the root user (default: root)",
+    )
+    serve_parser.add_argument(
+        "--root-password",
+        dest="root_password",
+        help="Password for the root user. Prompted securely if omitted. This option is for automation use cases.",
     )
 
     # clients command
@@ -241,6 +303,90 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
+def _ensure_root_client(args: argparse.Namespace) -> None:
+    """Create the root OAuth client if it does not already exist."""
+    client_id = args.root_client_id
+    init_db(args.db)
+    if get_client(args.db, client_id) is not None:
+        print(f"Root client '{client_id}' already exists, skipping.")
+        return
+
+    algorithm = get_algorithm(args.root_client_algorithm or "HS256")
+
+    if args.root_client_secret:
+        client_secret_raw = decode_prefixed_utf8(
+            args.root_client_secret, allow_from_file=True
+        )
+        generated_secret = False
+    else:
+        client_secret_raw = secrets.token_bytes(32)
+        generated_secret = True
+
+    signing_secret_raw: bytes | None = None
+    generated_signing_secret = False
+    if is_symmetric(algorithm):
+        if args.root_client_signing_secret:
+            signing_secret_raw = decode_prefixed_utf8(
+                args.root_client_signing_secret, allow_from_file=True
+            )
+        else:
+            signing_secret_raw = secrets.token_bytes(32)
+            generated_signing_secret = True
+    else:
+        if args.root_client_signing_secret:
+            normalized = _normalize_key_path(args.root_client_signing_secret)
+            if normalized is not None:
+                signing_secret_raw = decode_prefixed_utf8(
+                    normalized, allow_from_file=True
+                )
+
+    # root_client_scopes is a list of space-separated scope strings that each have to split
+    scopes: list[str] | None = None
+    if args.root_client_scopes is not None:
+        scopes = [s for entry in args.root_client_scopes for s in entry.split()]
+
+    # same here: root_client_audiences is an array of space separated audience strings that each have to be split into the final audiences list
+    audiences: list[str] | None = None
+    if args.root_client_audiences is not None:
+        audiences = [a for entry in args.root_client_audiences for a in entry.split()]
+
+    create_client(
+        db_path=args.db,
+        client_id=client_id,
+        client_secret=client_secret_raw,
+        algorithm=algorithm,
+        signing_secret=signing_secret_raw,
+        scopes=scopes,
+        audiences=audiences,
+    )
+
+    print(f"Created root client '{client_id}'")
+    if generated_secret:
+        print(
+            f"OAUTH_ROOT_CLIENT_SECRET={base64.b64encode(client_secret_raw).decode()}"
+        )
+    if is_symmetric(algorithm) and generated_signing_secret and signing_secret_raw:
+        print(f"JWT_ALGORITHM={algorithm.name}")
+        print(f'JWT_SECRET="hex:{signing_secret_raw.hex()}"')
+
+
+def _ensure_root_user(args: argparse.Namespace) -> None:
+    """Create or update the root user."""
+    username = args.root_username
+    password = args.root_password or getpass.getpass(
+        f"Password for root user '{username}': "
+    )
+
+    init_db(args.db)
+    existing = get_user(args.db, username)
+    if existing is None:
+        create_user(args.db, username, password)
+        print(f"Created root user '{username}'")
+    else:
+        update_user_password(args.db, username, password)
+        print(f"Updated root user '{username}'")
+
+
 def _normalize_key_path(value: str | None) -> str | None:
     """Normalize a private key CLI value to a parse_secret-compatible string.
 
@@ -279,6 +425,11 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         ec_p521_key_id=args.ec_p521_key_id,
         eddsa_key_id=args.eddsa_key_id,
     )
+
+    if args.create_root_client:
+        _ensure_root_client(args)
+    if args.create_root_user:
+        _ensure_root_user(args)
 
     print(f"Starting OAuth server on {config.host}:{config.port}")
     run_server(config)
