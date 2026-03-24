@@ -24,12 +24,11 @@ from .authorization_code_grant import (
 )
 
 logger = logging.getLogger(__name__)
-DEFAULT_EXPIRES_IN = 3600
 
-# set up Authorization: Basic base64(client_id:client_secret), but ignore errors
-security = HTTPBasic(auto_error=False)
-# Basic auth that returns 401 if not provided. Because {error: invalid_client} is not needed for this case
-login_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
+# set up Authorization: Basic base64(client_id:client_secret), but ignore errors, because we have to generate oauth2 json responses and it is optional anyway
+client_credentials_security = HTTPBasic(auto_error=False)
+# Basic auth that returns 401 if not provided. No OAuth2 json responses required
+authorization_code_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
 
 
 def create_app(config: ServerConfig) -> FastAPI:
@@ -75,7 +74,6 @@ def create_app(config: ServerConfig) -> FastAPI:
         client_id: Annotated[str, Query()],
         redirect_uri: Annotated[str, Query()],
         code_challenge: Annotated[str, Query()],
-        user: Annotated[HTTPBasicCredentials, Depends(login_security)],
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
@@ -85,7 +83,6 @@ def create_app(config: ServerConfig) -> FastAPI:
 
         Returns a JSON consent page with a confirm link.
         """
-        # TODO: Use the `user`-object to authenticate the user (separate from client)
         if response_type != "code":
             raise InvalidRequestException("Unsupported response_type")
         consent_data = handle_authorize(
@@ -96,24 +93,27 @@ def create_app(config: ServerConfig) -> FastAPI:
             scope=scope.split() if scope else None,
             audience=audience,
             state=state,
-            username=user.username,
             config=config,
         )
+        # TODO: Display as a basic html page without styling
+        # TODO: We also must have a form with a POST method so that POST /authorize/confirm works
+        # TODO: Maybe create a persistent "transaction id" that verifies that the /authorize/confirm endpoint is called after /authorize
+
         return JSONResponse(content=consent_data)
 
-    @app.get("/authorize/confirm")
+    @app.post("/authorize/confirm")
     async def authorize_confirm(
         client_id: Annotated[str, Query()],
         redirect_uri: Annotated[str, Query()],
         code_challenge: Annotated[str, Query()],
-        user: Annotated[HTTPBasicCredentials, Depends(login_security)],
+        user: Annotated[HTTPBasicCredentials, Depends(authorization_code_security)],
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
         state: Annotated[str | None, Query()] = None,
     ) -> RedirectResponse:
         """Consent confirmation endpoint. Generates an auth code and redirects."""
-        # TODO: Either use the `user`-objec to authenticate or require that this endpoint is handled via session cookies after the initial auth.
+        # TODO: Authenticate the user credentials through the User table
         redirect_url = handle_authorize_confirm(
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -122,7 +122,7 @@ def create_app(config: ServerConfig) -> FastAPI:
             scope=scope.split() if scope else None,
             audience=audience,
             state=state,
-            user_username=user.username,
+            username=user.username,
             config=config,
         )
         return RedirectResponse(url=redirect_url, status_code=302)
@@ -138,7 +138,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         redirect_uri: Annotated[str | None, Form()] = None,
         code_verifier: Annotated[str | None, Form()] = None,
         client_credentials: Annotated[
-            HTTPBasicCredentials | None, Depends(security)
+            HTTPBasicCredentials | None, Depends(client_credentials_security)
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""

@@ -34,7 +34,6 @@ def handle_authorize(
     scope: list[str] | None,
     audience: str | None,
     state: str | None,
-    username: str,
     config: ServerConfig,
 ) -> dict[
     Literal[
@@ -51,25 +50,24 @@ def handle_authorize(
 ]:
     """OAuth2 consent page.
 
-    The consent page is responsible to authenticate a user and ask them to
-    follow the /authorize/confirm link to next step of the authorization code
-    flow to confirm the request.
+    The consent page is responsible for validating the authorization request,
+    and displaying it to the user for confirmation. If the user confirms, they
+    will be redirected to the confirmation endpoint that asks for authentication
+    and then issues the authorization code to the client.
 
     Parameters:
-    - client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
-    - redirect_uri: The url to send the authorization code to after the user confirms. Must match one of the redirect URIs registered for the client.
-    - code_challenge: The PKCE code challenge from the authorization request.
-    - code_challenge_method: The PKCE code challenge method: "S256", "S512", or "plain".
-    - scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
-    - audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
-    - state: PKCE state parameter
-    - username: The user currently logged in. If the use the confirmation url the issuer of the authorization request will receive the access token.
-    -
+        client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
+        redirect_uri: The url to send the authorization code to after the user confirms. Must match one of the redirect URIs registered for the client.
+        code_challenge: The PKCE code challenge from the authorization request.
+        code_challenge_method: The PKCE code challenge method: "S256", "S512", or "plain".
+        scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
+        audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
+        state: PKCE state parameter
+        config: The server config, used to access the database and app URL for generating the confirm URL.
 
     Returns:
-        A dict with the props required for a consent page
+        Props for the consent page, including the confirm URL that the consent page should have a POST form button to.
     """
-
     if code_challenge_method not in ("S256", "S512", "plain"):
         raise InvalidRequestException(
             "code_challenge_method must be S256, S512, or plain"
@@ -77,9 +75,11 @@ def handle_authorize(
 
     client = get_client(config.db_path, client_id)
     if not client:
+        # TODO: This should probably be a 401?
         raise InvalidClientException("Invalid client", status_code=400)
 
     allowed_uris = client.get_redirect_uris_list()
+    # TODO: As mentioned in the test case, if allowed_uris is empty, we should just not allow any redirect. Remove and fix test.
     if allowed_uris and redirect_uri not in allowed_uris:
         raise InvalidRequestException("redirect_uri not registered for this client")
 
@@ -95,8 +95,6 @@ def handle_authorize(
         if audience not in allowed_audiences:
             raise InvalidAudienceException(f"Invalid audience: {audience}")
 
-    # TODO: Implement a user (not client) authentication system
-
     confirm_params: dict[str, str] = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -107,6 +105,8 @@ def handle_authorize(
         confirm_params["scope"] = " ".join(scope)
     if audience:
         confirm_params["audience"] = audience
+
+    # TODO: State should be required
     if state:
         confirm_params["state"] = state
 
@@ -116,7 +116,6 @@ def handle_authorize(
     return {
         "type": "consent",
         "message": f"Application '{client_id}' is requesting access.",
-        "user": username,
         "client_id": client_id,
         "requested_scopes": requested_scopes or [],
         "audience": audience,
@@ -133,13 +132,17 @@ def handle_authorize_confirm(
     scope: list[str] | None,
     audience: str | None,
     state: str | None,
-    user_username: str,
+    username: str,
     config: ServerConfig,
 ) -> str:
+    """Handles flow after the user has authenticated and authorized the request
+
+    Sets up the authorization code and redirects to the client with the code.
+    """
     code = create_authorization_code(
         db_path=config.db_path,
         client_id=client_id,
-        user_id=user_username,
+        user_id=username,
         redirect_uri=redirect_uri,
         scope=" ".join(scope) if scope else None,
         audience=audience,
@@ -149,6 +152,8 @@ def handle_authorize_confirm(
     )
 
     redirect_params: dict[str, str] = {"code": code}
+
+    # TODO: The state should just be required. Remove the option to not include it, and remove the if-check here, then update test case
     if state:
         redirect_params["state"] = state
 
@@ -156,7 +161,7 @@ def handle_authorize_confirm(
     logger.info(
         "Authorization code issued for client %s, user %s",
         client_id,
-        user_username,
+        username,
     )
     return redirect_url
 

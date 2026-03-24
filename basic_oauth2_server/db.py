@@ -114,8 +114,7 @@ class Client(TimestampMixin, Base):
         return f"sha256:{hashlib.sha256(secret).hexdigest()}"
 
 
-# explicit unique index on client_id (redundant with PK but makes intent clear)
-Index("ix_clients_client_id", Client.client_id, unique=True)
+# TODO: Verify that client_id is unique
 
 
 class User(TimestampMixin, Base):
@@ -374,6 +373,6 @@ def update_user_password(db_path: str, username: str, new_password: str) -> bool
         if not user:
             return False
         user.set_password(new_password)
-        # TODO: Tests have shown that the updated_at timestamp is not updating
+        # TODO: Tests have shown that the updated_at timestamp is not updating. Find out what is going on.
         session.commit()
         return True
