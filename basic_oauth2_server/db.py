@@ -37,10 +37,16 @@ class TimestampMixin:
 
 
 class Client(TimestampMixin, Base):
-    """OAuth client model."""
+    """OAuth2.0 client model."""
 
     __tablename__ = "clients"
 
+    # TODO: We need a title that can be displayed on the consent page
+    # TODO: Add title to admin page
+    # TODO: Add title to client cli
+    # TODO: Then make not-nullable
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The unique client identifier (public). This is the "username" for a client itself (not the user)
     client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
     # SHA256 hexdigest of client secret - the "password" used to obtain access tokens
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
