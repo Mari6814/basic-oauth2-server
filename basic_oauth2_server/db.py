@@ -157,7 +157,6 @@ class AuthorizationCode(TimestampMixin, Base):
     code_challenge_method: Mapped[str] = mapped_column(
         String(10), default="S256", nullable=False
     )
-    # TODO: Currently we check the expiration outside of the repository functions. We should move that into the functions of this module.
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
