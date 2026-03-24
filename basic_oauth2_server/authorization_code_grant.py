@@ -49,18 +49,17 @@ def handle_authorize(
     ],
     str | list[str] | None,
 ]:
-    """OAuth2 consent endpoint
+    """OAuth2 consent page.
 
-    Handles the /authorize endpoint, which validates the request and returns the
-    data required for the consent page, including a confirm URL that the user
-    can click to confirm the authorization request and receive an authorization
-    code.
+    The consent page is responsible to authenticate a user and ask them to
+    follow the /authorize/confirm link to next step of the authorization code
+    flow to confirm the request.
 
     Parameters:
     - client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
-    - redirect_uri: The url to send the authorization code to after the user confirms. TODO: Must match the redirect URI registered for the client.
+    - redirect_uri: The url to send the authorization code to after the user confirms. Must match one of the redirect URIs registered for the client.
     - code_challenge: The PKCE code challenge from the authorization request.
-    - code_challenge_method: The PKCE code challenge method, either "S256" or "plain". TODO: Allow "S512" as well.
+    - code_challenge_method: The PKCE code challenge method: "S256", "S512", or "plain".
     - scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
     - audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
     - state: PKCE state parameter
@@ -71,12 +70,18 @@ def handle_authorize(
         A dict with the props required for a consent page
     """
 
-    if code_challenge_method not in ("S256", "plain"):
-        raise InvalidRequestException("code_challenge_method must be S256 or plain")
+    if code_challenge_method not in ("S256", "S512", "plain"):
+        raise InvalidRequestException(
+            "code_challenge_method must be S256, S512, or plain"
+        )
 
     client = get_client(config.db_path, client_id)
     if not client:
         raise InvalidClientException("Invalid client", status_code=400)
+
+    allowed_uris = client.get_redirect_uris_list()
+    if allowed_uris and redirect_uri not in allowed_uris:
+        raise InvalidRequestException("redirect_uri not registered for this client")
 
     requested_scopes = scope if scope else []
     if requested_scopes:
@@ -92,7 +97,6 @@ def handle_authorize(
 
     # TODO: Implement a user (not client) authentication system
 
-    # Build confirm link
     confirm_params: dict[str, str] = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -130,7 +134,6 @@ def handle_authorize_confirm(
     audience: str | None,
     state: str | None,
     user_username: str,
-    user_password: str,
     config: ServerConfig,
 ) -> str:
     code = create_authorization_code(

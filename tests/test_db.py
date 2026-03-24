@@ -272,3 +272,50 @@ class TestUser:
     def test_update_user_password_returns_false_for_missing(self, db_path: str) -> None:
         """update_user_password returns False when the username does not exist."""
         assert update_user_password(db_path, "ghost", "pw") is False
+
+
+class TestClientRedirectUris:
+    def test_create_client_with_redirect_uris(self, db_path: str) -> None:
+        """create_client stores redirect_uris correctly."""
+        client = create_client(
+            db_path=db_path,
+            client_id="redirect-test",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"secret",
+            redirect_uris=[
+                "https://example.com/callback",
+                "https://app.example.com/oauth",
+            ],
+        )
+        assert (
+            client.redirect_uris
+            == "https://example.com/callback,https://app.example.com/oauth"
+        )
+
+    def test_get_redirect_uris_list(self, db_path: str) -> None:
+        """get_redirect_uris_list returns redirect URIs as a list."""
+        create_client(
+            db_path=db_path,
+            client_id="redirect-list-test",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"secret",
+            redirect_uris=["https://a.com/cb", "https://b.com/cb"],
+        )
+        client = get_client(db_path, "redirect-list-test")
+        assert client is not None
+        assert client.get_redirect_uris_list() == [
+            "https://a.com/cb",
+            "https://b.com/cb",
+        ]
+
+    def test_get_redirect_uris_list_empty(self, db_path: str) -> None:
+        """get_redirect_uris_list returns empty list when no redirect_uris configured."""
+        create_client(
+            db_path=db_path,
+            client_id="no-redirect-test",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"secret",
+        )
+        client = get_client(db_path, "no-redirect-test")
+        assert client is not None
+        assert client.get_redirect_uris_list() == []

@@ -55,8 +55,8 @@ class Client(TimestampMixin, Base):
     audiences: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Timestamp of last token issuance
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # TODO: Authorized callback urls for authorization code flow, etc.
-    # TODO: Add 'algorithm' accessor that returns the Symmetric|AsymmetricAlgorithm instance based on the stored algorithm name
+    # Comma-separated list of authorized redirect URIs for authorization code flow
+    redirect_uris: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def verify_client_secret(self, user_secret: bytes) -> bool:
         """Verify that the provided secret matches the stored hash."""
@@ -93,6 +93,12 @@ class Client(TimestampMixin, Base):
         if not self.audiences:
             return []
         return [a.strip() for a in self.audiences.split(",") if a.strip()]
+
+    def get_redirect_uris_list(self) -> list[str]:
+        """Return redirect URIs as a list."""
+        if not self.redirect_uris:
+            return []
+        return [u.strip() for u in self.redirect_uris.split(",") if u.strip()]
 
     def get_signing_secret_fingerprint(self) -> str | None:
         """Return a short SHA256 fingerprint for the signing secret with prefix."""
@@ -263,6 +269,7 @@ def create_client(
     signing_secret: bytes | None = None,
     scopes: list[str] | None = None,
     audiences: list[str] | None = None,
+    redirect_uris: list[str] | None = None,
 ) -> Client:
     """Create a new OAuth client.
 
@@ -274,6 +281,7 @@ def create_client(
         signing_secret: Signing secret for HMAC algorithms (required for HS256, etc.).
         scopes: List of allowed scopes.
         audiences: List of allowed audiences.
+        redirect_uris: List of allowed redirect URIs for authorization code flow.
     """
     with get_session(db_path) as session:
         client = Client(
@@ -281,6 +289,7 @@ def create_client(
             algorithm=algorithm.name,
             scopes=",".join(scopes) if scopes else None,
             audiences=",".join(audiences) if audiences else None,
+            redirect_uris=",".join(redirect_uris) if redirect_uris else None,
         )
         if client_secret:
             client.set_secret(client_secret)

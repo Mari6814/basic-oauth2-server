@@ -123,7 +123,6 @@ def create_app(config: ServerConfig) -> FastAPI:
             audience=audience,
             state=state,
             user_username=user.username,
-            user_password=user.password,
             config=config,
         )
         return RedirectResponse(url=redirect_url, status_code=302)

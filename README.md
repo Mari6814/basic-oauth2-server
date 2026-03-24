@@ -193,6 +193,7 @@ basic-oauth2-server clients delete --client-id my-service
 | `--signing-secret` | Signing secret for HMAC algorithms (auto-generated if not provided for HS256/384/512) |
 | `--scope`          | Add allowed scope. Can be used multiple times.                                        |
 | `--audience`       | Add allowed audience. Can be used multiple times.                                     |
+| `--redirect-uri`   | Add allowed redirect URI for authorization code flow. Can be used multiple times.     |
 
 ### Secret Formats
 

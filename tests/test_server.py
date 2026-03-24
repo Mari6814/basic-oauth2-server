@@ -923,3 +923,183 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_scope"
+
+
+def _pkce_s512_pair() -> tuple[str, str]:
+    """Generate a PKCE code_verifier and S512 code_challenge."""
+    verifier = secrets.token_urlsafe(48)
+    digest = hashlib.sha512(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
+    """Test authorization code flow with S512 PKCE method."""
+    verifier, challenge = _pkce_s512_pair()
+    auth_headers = _basic_auth_header("testuser", "testpass")
+
+    response = client_with_db.get(
+        "/authorize/confirm",
+        params={
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S512",
+            "scope": "read",
+        },
+        headers=auth_headers,
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
+
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": "test-client",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+        },
+    )
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_authorization_code_flow_s512_wrong_verifier(
+    client_with_db: TestClient,
+) -> None:
+    """Test that wrong PKCE verifier is rejected with S512 method."""
+    verifier, challenge = _pkce_s512_pair()
+    auth_headers = _basic_auth_header("testuser", "testpass")
+
+    response = client_with_db.get(
+        "/authorize/confirm",
+        params={
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S512",
+        },
+        headers=auth_headers,
+        follow_redirects=False,
+    )
+    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
+
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": "test-client",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": "wrong-verifier",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_grant"
+
+
+def test_authorize_redirect_uri_validation(temp_db: str) -> None:
+    """Test that redirect_uri must match registered URIs when configured."""
+    create_client(
+        db_path=temp_db,
+        client_id="redirect-client",
+        client_secret=b"redirect-secret",
+        algorithm=SymmetricAlgorithm.HS256,
+        signing_secret=b"redirect-signing-secret-12345",
+        redirect_uris=["https://example.com/callback", "https://app.example.com/oauth"],
+    )
+
+    config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+    app = create_app(config)
+    tc = TestClient(app)
+    auth_headers = _basic_auth_header("testuser", "testpass")
+
+    # Test with allowed redirect_uri
+    response = tc.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "redirect-client",
+            "redirect_uri": "https://example.com/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    # Test with disallowed redirect_uri
+    response = tc.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "redirect-client",
+            "redirect_uri": "https://evil.com/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
+def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
+    """Test that redirect_uri is allowed if no redirect_uris are configured."""
+    # TODO: I'm not sure if this is a good idea. Maybe empty should just mean "no valid redirect URIs" instead of "allow any"?
+    create_client(
+        db_path=temp_db,
+        client_id="open-client",
+        client_secret=b"open-secret",
+        algorithm=SymmetricAlgorithm.HS256,
+        signing_secret=b"open-signing-secret-123456",
+    )
+
+    config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+    app = create_app(config)
+    tc = TestClient(app)
+    auth_headers = _basic_auth_header("testuser", "testpass")
+
+    response = tc.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "open-client",
+            "redirect_uri": "https://any.example.com/callback",
+            "code_challenge": "test-challenge",
+            "code_challenge_method": "S256",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+
+def test_token_expires_in_configurable(temp_db: str) -> None:
+    """Test that token expiry can be configured via ServerConfig."""
+    create_client(
+        db_path=temp_db,
+        client_id="expiry-client",
+        client_secret=b"expiry-secret",
+        algorithm=SymmetricAlgorithm.HS256,
+        signing_secret=b"expiry-signing-secret-12345",
+    )
+
+    config = ServerConfig(
+        host="localhost", port=8080, db_path=temp_db, token_expires_in=7200
+    )
+    app = create_app(config)
+    tc = TestClient(app)
+
+    response = tc.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "expiry-client",
+            "client_secret": b64("expiry-secret"),
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["expires_in"] == 7200

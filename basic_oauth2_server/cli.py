@@ -226,6 +226,13 @@ def main(args: list[str] | None = None) -> int:
         action="append",
         help="Add allowed audience to the client's allowed audiences (can be specified multiple times or as a comma-separated list)",
     )
+    create_parser.add_argument(
+        "-r",
+        "--redirect-uri",
+        dest="redirect_uris",
+        action="append",
+        help="Add allowed redirect URI for authorization code flow (can be specified multiple times)",
+    )
 
     # clients list
     _list_parser = clients_subparsers.add_parser("list", help="List all clients")
@@ -453,6 +460,7 @@ def _cmd_clients(args: argparse.Namespace) -> int:
             signing_secret=args.signing_secret,
             scopes=args.scopes,
             audiences=args.audiences,
+            redirect_uris=args.redirect_uris,
             db=args.db,
         )
         return _cmd_clients_create(create_args)
@@ -472,6 +480,7 @@ class ClientCreateArgs(argparse.Namespace):
     signing_secret: str | None
     scopes: list[str] | None
     audiences: list[str] | None
+    redirect_uris: list[str] | None
     db: str
 
 
@@ -498,6 +507,7 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
 
     scopes = args.scopes or []
     audiences = args.audiences or []
+    redirect_uris = args.redirect_uris or []
 
     client = create_client(
         db_path=args.db,
@@ -507,6 +517,7 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
         signing_secret=signing_secret,
         scopes=scopes,
         audiences=audiences,
+        redirect_uris=redirect_uris,
     )
 
     print(f"OAUTH_CLIENT_ID={client.client_id}")
