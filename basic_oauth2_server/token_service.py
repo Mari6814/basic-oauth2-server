@@ -45,9 +45,7 @@ def create_access_token_for_client(
             secret=signing_secret,
             scopes=scopes,
             audience=audience,
-            # TODO: make expires_in configurable via env variable
-            expires_in=3600,
-            # TODO: In `get_signing_secret` I added a todo to later track client signing secret key ID as well
+            expires_in=config.token_expires_in,
             issuer=config.app_url,
         )
     else:
@@ -58,8 +56,7 @@ def create_access_token_for_client(
             private_key=private_key,
             scopes=scopes,
             audience=audience,
-            # TODO: replace with config env variable
-            expires_in=3600,
+            expires_in=config.token_expires_in,
             kid=kid,
             issuer=config.app_url,
         )

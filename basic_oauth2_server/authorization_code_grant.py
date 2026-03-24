@@ -25,8 +25,6 @@ from .db import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EXPIRES_IN = 3600
-
 
 def handle_authorize(
     client_id: str,
@@ -223,7 +221,7 @@ def handle_authorization_code(
     return {
         "access_token": access_token,
         "token_type": "Bearer",
-        "expires_in": DEFAULT_EXPIRES_IN,
+        "expires_in": config.token_expires_in,
         **({"scope": " ".join(scopes)} if scopes else {}),
     }
 
@@ -236,7 +234,10 @@ def _verify_pkce(
         digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
         computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         return computed == code_challenge
-    # TODO: Add S512 and maybe have a enum for code_challenge_method
+    elif code_challenge_method == "S512":
+        digest = hashlib.sha512(code_verifier.encode("ascii")).digest()
+        computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        return computed == code_challenge
     elif code_challenge_method == "plain":
         return code_verifier == code_challenge
     return False

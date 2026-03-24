@@ -36,9 +36,6 @@ class TimestampMixin:
     )
 
 
-# TODO: Add & Refactor mixin for expiration
-
-
 class Client(TimestampMixin, Base):
     """OAuth client model."""
 

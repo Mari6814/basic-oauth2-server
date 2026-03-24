@@ -125,6 +125,7 @@ basic-oauth2-server serve [options]
 | ----------------------- | --------------------------- | ----------- | --------------------------------- |
 | `--port`                | `OAUTH_PORT`                | `8080`      | Port for the server               |
 | `--host`                | `OAUTH_HOST`                | `localhost` | Host address to bind              |
+| `--token-expires-in`    | `OAUTH_TOKEN_EXPIRES_IN`    | `3600`      | Token expiry in seconds           |
 | `--rsa-private-key`     | `OAUTH_RSA_PRIVATE_KEY`     | -           | RSA private key for RS*/PS*       |
 | `--ec-p256-private-key` | `OAUTH_EC_P256_PRIVATE_KEY` | -           | ECDSA P-256 private key for ES256 |
 | `--ec-p384-private-key` | `OAUTH_EC_P384_PRIVATE_KEY` | -           | ECDSA P-384 private key for ES384 |
@@ -297,6 +298,7 @@ Configuration can be provided via CLI arguments or environment variables. CLI ar
 | `OAUTH_DB_PATH`             | SQLite database path                                 |
 | `OAUTH_ADMIN_PORT`          | Admin dashboard port                                 |
 | `OAUTH_ADMIN_HOST`          | Admin dashboard host                                 |
+| `OAUTH_TOKEN_EXPIRES_IN`    | Token expiry in seconds (default: 3600)              |
 | `OAUTH_RSA_PRIVATE_KEY`     | RSA private key for RS*/PS* algorithms               |
 | `OAUTH_EC_P256_PRIVATE_KEY` | ECDSA P-256 private key for ES256                    |
 | `OAUTH_EC_P384_PRIVATE_KEY` | ECDSA P-384 private key for ES384                    |

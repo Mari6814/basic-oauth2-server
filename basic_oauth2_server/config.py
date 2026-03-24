@@ -28,7 +28,8 @@ class ServerConfig:
     ec_p384_key_id: str | None = None
     ec_p521_key_id: str | None = None
     eddsa_key_id: str | None = None
-    # TODO: Add token expiry env variable
+    # Token expiry in seconds (default: 3600 = 1 hour)
+    token_expires_in: int = 3600
 
     @cache
     def load_private_key(
@@ -91,6 +92,7 @@ class ServerConfig:
             ec_p384_key_id=os.environ.get("OAUTH_EC_P384_KEY_ID"),
             ec_p521_key_id=os.environ.get("OAUTH_EC_P521_KEY_ID"),
             eddsa_key_id=os.environ.get("OAUTH_EDDSA_KEY_ID"),
+            token_expires_in=int(os.environ.get("OAUTH_TOKEN_EXPIRES_IN", "3600")),
         )
 
 

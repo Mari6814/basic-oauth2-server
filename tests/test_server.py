@@ -4,12 +4,13 @@ import hashlib
 import os
 import base64
 import json
+import secrets
+import pytest
 from pathlib import Path
 from collections.abc import Generator
 from urllib.parse import urlparse, parse_qs
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
-import pytest
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
@@ -677,8 +678,6 @@ def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
 
 def _pkce_pair() -> tuple[str, str]:
     """Generate a PKCE code_verifier and S256 code_challenge."""
-    import secrets
-
     verifier = secrets.token_urlsafe(48)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

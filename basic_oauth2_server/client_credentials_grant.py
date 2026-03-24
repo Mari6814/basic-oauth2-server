@@ -106,7 +106,6 @@ def handle_client_credentials(
     return {
         "access_token": access_token,
         "token_type": "Bearer",
-        # TODO: replace by config env variable
-        "expires_in": 3600,
+        "expires_in": config.token_expires_in,
         **({"scope": scope} if scope else {}),
     }

@@ -110,6 +110,12 @@ def main(args: list[str] | None = None) -> int:
         default=os.environ.get("OAUTH_EDDSA_KEY_ID"),
         help="Key ID for EdDSA key (included in JWT header as 'kid')",
     )
+    serve_parser.add_argument(
+        "--token-expires-in",
+        type=int,
+        default=int(os.environ.get("OAUTH_TOKEN_EXPIRES_IN", "3600")),
+        help="Token expiry in seconds (default: 3600)",
+    )
 
     # Root client bootstrapping
     serve_parser.add_argument(
@@ -223,7 +229,6 @@ def main(args: list[str] | None = None) -> int:
 
     # clients list
     _list_parser = clients_subparsers.add_parser("list", help="List all clients")
-    # TODO: Add filters?
 
     # clients delete
     delete_parser = clients_subparsers.add_parser("delete", help="Delete a client")
@@ -421,6 +426,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         ec_p384_key_id=args.ec_p384_key_id,
         ec_p521_key_id=args.ec_p521_key_id,
         eddsa_key_id=args.eddsa_key_id,
+        token_expires_in=args.token_expires_in,
     )
 
     if args.create_root_client:
