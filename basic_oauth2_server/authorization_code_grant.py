@@ -41,6 +41,7 @@ def handle_authorize(
         "message",
         "user",
         "client_id",
+        "title",
         "requested_scopes",
         "audience",
         "redirect_uri",
@@ -115,8 +116,9 @@ def handle_authorize(
 
     return {
         "type": "consent",
-        "message": f"Application '{client_id}' is requesting access.",
+        "message": f"Application '{client.title}' is requesting access.",
         "client_id": client_id,
+        "title": client.title,
         "requested_scopes": requested_scopes or [],
         "audience": audience,
         "redirect_uri": redirect_uri,
