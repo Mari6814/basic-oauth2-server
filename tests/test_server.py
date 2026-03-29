@@ -33,7 +33,6 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
 @pytest.fixture
 def client_with_db(temp_db: str) -> TestClient:
     """Create a test client with a temporary database."""
-    # Create a test OAuth client
     create_client(
         db_path=temp_db,
         client_id="test-client",
@@ -42,7 +41,9 @@ def client_with_db(temp_db: str) -> TestClient:
         signing_secret=b"test-signing-secret-1234567890",
         scopes=["read", "write"],
         audiences=["https://api.test.com"],
+        redirect_uris=["http://localhost/callback"],
     )
+    create_user(temp_db, "testuser", "testpass")
 
     config = ServerConfig(
         host="localhost",
@@ -95,7 +96,6 @@ def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
 
 def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
     """A client may request a subset of its configured scopes."""
-    # create client with three allowed scopes
     create_client(
         db_path=temp_db,
         client_id="subset-client",
@@ -206,7 +206,6 @@ def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
 
 def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     """A client may request any single audience from its configured list."""
-    # create client with two allowed audiences
     create_client(
         db_path=temp_db,
         client_id="audience-client",
@@ -586,7 +585,6 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     data = response.json()
     assert "access_token" in data
 
-    # Decode payload (second part of JWT)
     payload_b64 = data["access_token"].split(".")[1]
     payload_b64 += "=" * (4 - len(payload_b64) % 4)
     payload = json.loads(base64.urlsafe_b64decode(payload_b64))
@@ -647,7 +645,6 @@ def test_token_endpoint_basic_auth_unknown_client(client_with_db: TestClient) ->
 def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
     """Test that Basic auth takes priority over form credentials."""
 
-    # Provide correct credentials in header, wrong in form
     credentials = base64.b64encode(
         f"test-client:{b64('test-secret')}".encode()
     ).decode()
@@ -690,19 +687,53 @@ def _basic_auth_header(username: str, password: str) -> dict[str, str]:
     return {"Authorization": f"Basic {creds}"}
 
 
+def _get_consent_token(
+    tc: TestClient,
+    *,
+    client_id: str,
+    redirect_uri: str,
+    challenge: str,
+    state: str,
+    code_challenge_method: str = "S256",
+    scope: str | None = None,
+    audience: str | None = None,
+    username: str = "testuser",
+    password: str = "testpass",
+) -> str:
+    """Call GET /authorize and return the consent_token from the JSON response."""
+    params: dict[str, str] = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code_challenge": challenge,
+        "code_challenge_method": code_challenge_method,
+        "state": state,
+    }
+    if scope:
+        params["scope"] = scope
+    if audience:
+        params["audience"] = audience
+    response = tc.get(
+        "/authorize",
+        params=params,
+        headers=_basic_auth_header(username, password),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["consent_token"]
+
+
 def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     """Test complete authorization code flow:
 
     This test implements the full flow of an OAuth 2.0 Authorization Code grant with PKCE:
-        1. authorize: The user is redirected to the /authorize endpoint with PKCE from what ever app they are using. The server responds with a consent object containing the requested scopes and a confirm URL.
-        2. consent: After they authorize they have to press the consent link that will redirect them to the confirm URL. The server generates an authorization code and redirects to the client's redirect_uri with the code and state.
-        3. confirm: The client receives the authorization code and makes a POST request to /oauth2/token with the code and PKCE verifier to exchange it for an access token.
-        4. token exchange: The server validates the authorization code and PKCE verifier, then issues an access token.
+        1. authorize: The user calls GET /authorize with Basic Auth and PKCE params. The server
+           responds with a consent object that includes a signed consent_token JWT.
+        2. consent: The user POSTs only the consent_token to /authorize/confirm. The server
+           validates the JWT, creates an auth code, and redirects to redirect_uri.
+        3. token exchange: The client POSTs to /oauth2/token with the code and PKCE verifier.
     """
     verifier, challenge = _pkce_pair()
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
-    # Step 1/2. redirected to /authorize
     response = client_with_db.get(
         "/authorize",
         params={
@@ -715,7 +746,7 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
             "audience": "https://api.test.com",
             "state": "test-state-123",
         },
-        headers=auth_headers,
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 200
     consent = response.json()
@@ -724,20 +755,13 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     assert consent["user"] == "testuser"
     assert consent["requested_scopes"] == ["read", "write"]
     assert "confirm_url" in consent
+    assert "consent_token" in consent
+    consent_token = consent["consent_token"]
 
-    # Step 3. the previous step would show a consent page to the user, and when they click "Authorize" it would redirect to the confirm URL. We simulate that by directly calling the confirm endpoint with the same parameters and auth.
-    response = client_with_db.get(
+    response = client_with_db.post(
         "/authorize/confirm",
-        params={
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost/callback",
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-            "scope": "read write",
-            "audience": "https://api.test.com",
-            "state": "test-state-123",
-        },
-        headers=auth_headers,
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
         follow_redirects=False,
     )
     assert response.status_code == 302
@@ -748,7 +772,6 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     assert query["state"] == ["test-state-123"]
     code = query["code"][0]
 
-    # Step 4. the client receives the code and makes a POST request to /oauth2/token with the code and PKCE verifier to exchange it for an access token.
     response = client_with_db.post(
         "/oauth2/token",
         data={
@@ -766,7 +789,6 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     assert token_data["expires_in"] == 3600
     assert token_data["scope"] == "read write"
 
-    # Validate that the access token is a valid JWT with correct claims
     access_token = token_data["access_token"]
     header_b64, payload_b64, signature_b64 = access_token.split(".")
     header_b64 += "=" * (4 - len(header_b64) % 4)
@@ -782,19 +804,18 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
 def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:
     """Test that an authorization code cannot be used twice."""
     verifier, challenge = _pkce_pair()
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
-    # Get auth code
-    response = client_with_db.get(
+    consent_token = _get_consent_token(
+        client_with_db,
+        client_id="test-client",
+        redirect_uri="http://localhost/callback",
+        challenge=challenge,
+        state="reuse-state",
+    )
+    response = client_with_db.post(
         "/authorize/confirm",
-        params={
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost/callback",
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-            "state": "reuse-state",
-        },
-        headers=auth_headers,
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
         follow_redirects=False,
     )
     code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
@@ -828,24 +849,22 @@ def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:
 def test_authorization_code_wrong_verifier(client_with_db: TestClient) -> None:
     """Test that a wrong PKCE code_verifier is rejected."""
     verifier, challenge = _pkce_pair()
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
-    # Get auth code
-    response = client_with_db.get(
+    consent_token = _get_consent_token(
+        client_with_db,
+        client_id="test-client",
+        redirect_uri="http://localhost/callback",
+        challenge=challenge,
+        state="wrong-verifier-state",
+    )
+    response = client_with_db.post(
         "/authorize/confirm",
-        params={
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost/callback",
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-            "state": "wrong-verifier-state",
-        },
-        headers=auth_headers,
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
         follow_redirects=False,
     )
     code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
 
-    # Exchange with wrong verifier
     response = client_with_db.post(
         "/oauth2/token",
         data={
@@ -875,8 +894,29 @@ def test_authorization_code_missing_verifier(client_with_db: TestClient) -> None
     assert response.json()["error"] == "invalid_request"
 
 
+def test_authorize_confirm_rejects_invalid_token(client_with_db: TestClient) -> None:
+    """Test that /authorize/confirm rejects a missing or tampered token."""
+    # Missing token
+    response = client_with_db.post(
+        "/authorize/confirm",
+        data={},
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 422
+
+    # Invalid token
+    response = client_with_db.post(
+        "/authorize/confirm",
+        data={"token": "invalid.token.value"},
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+
 def test_authorize_requires_auth(client_with_db: TestClient) -> None:
-    """Test that /authorize returns 401 without Basic Auth."""
+    """Test that GET /authorize returns 401 without Basic Auth."""
     response = client_with_db.get(
         "/authorize",
         params={
@@ -893,7 +933,6 @@ def test_authorize_requires_auth(client_with_db: TestClient) -> None:
 
 def test_authorize_invalid_client(client_with_db: TestClient) -> None:
     """Test that /authorize rejects unknown client_id."""
-    auth_headers = _basic_auth_header("testuser", "testpass")
     response = client_with_db.get(
         "/authorize",
         params={
@@ -904,7 +943,7 @@ def test_authorize_invalid_client(client_with_db: TestClient) -> None:
             "code_challenge_method": "S256",
             "state": "test-state",
         },
-        headers=auth_headers,
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 401
     assert response.json()["error"] == "invalid_client"
@@ -923,6 +962,7 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
             "scope": "admin",
             "state": "test-state",
         },
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_scope"
@@ -939,19 +979,20 @@ def _pkce_s512_pair() -> tuple[str, str]:
 def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
     """Test authorization code flow with S512 PKCE method."""
     verifier, challenge = _pkce_s512_pair()
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
-    response = client_with_db.get(
+    consent_token = _get_consent_token(
+        client_with_db,
+        client_id="test-client",
+        redirect_uri="http://localhost/callback",
+        challenge=challenge,
+        code_challenge_method="S512",
+        scope="read",
+        state="s512-state",
+    )
+    response = client_with_db.post(
         "/authorize/confirm",
-        params={
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost/callback",
-            "code_challenge": challenge,
-            "code_challenge_method": "S512",
-            "scope": "read",
-            "state": "s512-state",
-        },
-        headers=auth_headers,
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
         follow_redirects=False,
     )
     assert response.status_code == 302
@@ -976,18 +1017,19 @@ def test_authorization_code_flow_s512_wrong_verifier(
 ) -> None:
     """Test that wrong PKCE verifier is rejected with S512 method."""
     verifier, challenge = _pkce_s512_pair()
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
-    response = client_with_db.get(
+    consent_token = _get_consent_token(
+        client_with_db,
+        client_id="test-client",
+        redirect_uri="http://localhost/callback",
+        challenge=challenge,
+        code_challenge_method="S512",
+        state="s512-wrong-state",
+    )
+    response = client_with_db.post(
         "/authorize/confirm",
-        params={
-            "client_id": "test-client",
-            "redirect_uri": "http://localhost/callback",
-            "code_challenge": challenge,
-            "code_challenge_method": "S512",
-            "state": "s512-wrong-state",
-        },
-        headers=auth_headers,
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
         follow_redirects=False,
     )
     code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
@@ -1021,7 +1063,6 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)
     tc = TestClient(app)
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
     # Test with allowed redirect_uri
     response = tc.get(
@@ -1034,11 +1075,10 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
             "code_challenge_method": "S256",
             "state": "test-state",
         },
-        headers=auth_headers,
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 200
 
-    # Test with disallowed redirect_uri
     response = tc.get(
         "/authorize",
         params={
@@ -1049,7 +1089,7 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
             "code_challenge_method": "S256",
             "state": "test-state",
         },
-        headers=auth_headers,
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_request"
@@ -1069,7 +1109,6 @@ def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)
     tc = TestClient(app)
-    auth_headers = _basic_auth_header("testuser", "testpass")
 
     response = tc.get(
         "/authorize",
@@ -1081,7 +1120,7 @@ def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
             "code_challenge_method": "S256",
             "state": "test-state",
         },
-        headers=auth_headers,
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_request"
@@ -1113,3 +1152,146 @@ def test_token_expires_in_configurable(temp_db: str) -> None:
     )
     assert response.status_code == 200
     assert response.json()["expires_in"] == 7200
+
+
+class TestAuthorizeBasicAuth:
+    def test_authorize_rejects_wrong_password(self, client_with_db: TestClient) -> None:
+        """GET /authorize returns 401 when the password is wrong."""
+        response = client_with_db.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "test-client",
+                "redirect_uri": "http://localhost/callback",
+                "code_challenge": "test",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+            headers=_basic_auth_header("testuser", "wrongpass"),
+        )
+        assert response.status_code == 401
+
+    def test_authorize_rejects_unknown_user(self, client_with_db: TestClient) -> None:
+        """GET /authorize returns 401 when the username does not exist."""
+        response = client_with_db.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "test-client",
+                "redirect_uri": "http://localhost/callback",
+                "code_challenge": "test",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+            headers=_basic_auth_header("nobody", "testpass"),
+        )
+        assert response.status_code == 401
+
+
+class TestAuthorizeConfirmBasicAuth:
+    def test_authorize_confirm_requires_auth(self, client_with_db: TestClient) -> None:
+        """POST /authorize/confirm returns 401 when no Basic Auth is provided."""
+        verifier, challenge = _pkce_pair()
+        consent_token = _get_consent_token(
+            client_with_db,
+            client_id="test-client",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge,
+            state="auth-required-state",
+        )
+        response = client_with_db.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+
+    def test_authorize_confirm_rejects_wrong_password(
+        self, client_with_db: TestClient
+    ) -> None:
+        """POST /authorize/confirm returns 401 when the password is wrong."""
+        verifier, challenge = _pkce_pair()
+        consent_token = _get_consent_token(
+            client_with_db,
+            client_id="test-client",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge,
+            state="wrong-pw-state",
+        )
+        response = client_with_db.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("testuser", "wrongpass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+
+    def test_authorize_confirm_rejects_unknown_user(
+        self, client_with_db: TestClient
+    ) -> None:
+        """POST /authorize/confirm returns 401 when the username does not exist."""
+        verifier, challenge = _pkce_pair()
+        consent_token = _get_consent_token(
+            client_with_db,
+            client_id="test-client",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge,
+            state="unknown-user-state",
+        )
+        response = client_with_db.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("nobody", "testpass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 401
+
+
+class TestAuthorizeConfirmUserMismatch:
+    def test_authorize_confirm_rejects_user_mismatch(self, temp_db: str) -> None:
+        """POST /authorize/confirm returns 403 when the Basic Auth user differs from the token user."""
+        create_client(
+            db_path=temp_db,
+            client_id="mismatch-client",
+            client_secret=b"mismatch-secret",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"mismatch-signing-secret-12345",
+            scopes=["read"],
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_user(temp_db, "alice", "alicepass")
+        create_user(temp_db, "bob", "bobpass")
+
+        config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+        app = create_app(config)
+        tc = TestClient(app)
+
+        verifier, challenge = _pkce_pair()
+
+        consent_token = _get_consent_token(
+            tc,
+            client_id="mismatch-client",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge,
+            state="mismatch-state",
+            username="alice",
+            password="alicepass",
+        )
+
+        # Bob can not confirm Alice's token
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("bob", "bobpass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+        # Alice can confirm her own token
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("alice", "alicepass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 302

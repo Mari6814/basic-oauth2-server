@@ -1,7 +1,7 @@
 """FastAPI OAuth server implementation."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -16,6 +16,11 @@ from basic_oauth2_server.exceptions import (
     OAuth2Exception,
 )
 from basic_oauth2_server.jwks import build_jwks
+from .consent_token import (
+    CONSENT_TOKEN_EXPIRES_IN,
+    create_consent_token,
+    verify_consent_token,
+)
 from .client_credentials_grant import handle_client_credentials
 from .authorization_code_grant import (
     handle_authorization_code,
@@ -25,10 +30,11 @@ from .authorization_code_grant import (
 
 logger = logging.getLogger(__name__)
 
-# set up Authorization: Basic base64(client_id:client_secret), but ignore errors, because we have to generate oauth2 json responses and it is optional anyway
+# set up Authorization: Basic base64(client_id:client_secret), but ignore errors,
+# because we have to generate oauth2 json responses and it is optional anyway
 client_credentials_security = HTTPBasic(auto_error=False)
-# Basic auth that returns 401 if not provided. No OAuth2 json responses required
-authorization_code_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
+# For /authorize, Basic Auth is required (auto_error returns 401 on missing credentials).
+authorize_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
 
 
 def create_app(config: ServerConfig) -> FastAPI:
@@ -75,16 +81,29 @@ def create_app(config: ServerConfig) -> FastAPI:
         redirect_uri: Annotated[str, Query()],
         code_challenge: Annotated[str, Query()],
         state: Annotated[str, Query()],
+        user: Annotated[HTTPBasicCredentials, Depends(authorize_security)],
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
     ) -> JSONResponse:
-        """Authorization endpoint. Requires HTTP Basic Auth to identify the user.
+        """Authorization endpoint. Requires HTTP Basic Auth.
 
-        Returns a JSON consent page with a confirm link.
+        Validates the user credentials and the authorization request parameters,
+        then returns a consent page JSON. The consent page contains a confirm_url
+        with a signed JWT that encodes all authorization parameters. The user
+        POSTs only that token to /authorize/confirm to complete the flow.
         """
         if response_type != "code":
             raise InvalidRequestException("Unsupported response_type")
+
+        db_user = get_user(config.db_path, user.username)
+        if not db_user or not db_user.verify_password(user.password):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": 'Basic realm="OAuth Authorization"'},
+            )
+
         consent_data = handle_authorize(
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -95,24 +114,51 @@ def create_app(config: ServerConfig) -> FastAPI:
             state=state,
             config=config,
         )
-        # TODO: Display as a basic html page without styling
-        # TODO: We also must have a form with a POST method so that POST /authorize/confirm works
-        # TODO: Maybe create a persistent "transaction id" that verifies that the /authorize/confirm endpoint is called after /authorize
 
-        return JSONResponse(content=consent_data)
+        consent_token = create_consent_token(
+            username=user.username,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            state=state,
+            scope=scope or None,
+            audience=audience,
+            config=config,
+        )
+
+        base_url = config.app_url or ""
+        return JSONResponse(
+            content={
+                **consent_data,
+                "confirm_url": f"{base_url}/authorize/confirm",
+                "consent_token": consent_token,
+                "user": user.username,
+            }
+        )
 
     @app.post("/authorize/confirm")
     async def authorize_confirm(
-        client_id: Annotated[str, Query()],
-        redirect_uri: Annotated[str, Query()],
-        code_challenge: Annotated[str, Query()],
-        state: Annotated[str, Query()],
-        user: Annotated[HTTPBasicCredentials, Depends(authorization_code_security)],
-        code_challenge_method: Annotated[str, Query()] = "S256",
-        scope: Annotated[str | None, Query()] = None,
-        audience: Annotated[str | None, Query()] = None,
+        token: Annotated[str, Form()],
+        user: Annotated[HTTPBasicCredentials, Depends(authorize_security)],
     ) -> RedirectResponse:
-        """Consent confirmation endpoint. Generates an auth code and redirects."""
+        """Endpoint that marks the received JWT as consented to by the end user.
+
+        Receives a form POST containing only the signed consent JWT issued by
+        GET /authorize. The token is verified and its claims are used to create
+        the authorization code. Redirects to the redirect_uri with the code.
+        """
+        claims = verify_consent_token(token, config=config)
+
+        username: str = claims.username
+        client_id: str = claims.client_id
+        redirect_uri: str = claims.redirect_uri
+        code_challenge: str = claims.code_challenge
+        code_challenge_method: str = claims.code_challenge_method
+        state: str = claims.state
+        scope_str: str | None = claims.scope
+        audience: str | None = claims.audience
+
         db_user = get_user(config.db_path, user.username)
         if not db_user or not db_user.verify_password(user.password):
             raise HTTPException(
@@ -121,15 +167,21 @@ def create_app(config: ServerConfig) -> FastAPI:
                 headers={"WWW-Authenticate": 'Basic realm="OAuth Authorization"'},
             )
 
+        if user.username != username:
+            raise HTTPException(
+                status_code=403,
+                detail="Forbidden: token user does not match authenticated user",
+            )
+
         redirect_url = handle_authorize_confirm(
             client_id=client_id,
             redirect_uri=redirect_uri,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
-            scope=scope.split() if scope else None,
+            scope=scope_str.split() if scope_str else None,
             audience=audience,
             state=state,
-            username=user.username,
+            username=username,
             config=config,
         )
         return RedirectResponse(url=redirect_url, status_code=302)

@@ -38,22 +38,18 @@ def handle_authorize(
     Literal[
         "type",
         "message",
-        "user",
         "client_id",
         "title",
         "requested_scopes",
         "audience",
         "redirect_uri",
-        "confirm_url",
     ],
     str | list[str] | None,
 ]:
     """OAuth2 consent page.
 
-    The consent page is responsible for validating the authorization request,
-    and displaying it to the user for confirmation. If the user confirms, they
-    will be redirected to the confirmation endpoint that asks for authentication
-    and then issues the authorization code to the client.
+    The consent page is responsible for authenticating the user, validating the
+    authorization request, and displaying it to the user for confirmation.
 
     Parameters:
         client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
@@ -66,7 +62,7 @@ def handle_authorize(
         config: The server config, used to access the database and app URL for generating the confirm URL.
 
     Returns:
-        Props for the consent page, including the confirm URL that the consent page should have a POST form button to.
+        A portion of the props required to visualize in the consent page.
     """
     if code_challenge_method not in ("S256", "S512", "plain"):
         raise InvalidRequestException(
@@ -93,21 +89,6 @@ def handle_authorize(
         if audience not in allowed_audiences:
             raise InvalidAudienceException(f"Invalid audience: {audience}")
 
-    confirm_params: dict[str, str] = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "code_challenge": code_challenge,
-        "code_challenge_method": code_challenge_method,
-        "state": state,
-    }
-    if scope:
-        confirm_params["scope"] = " ".join(scope)
-    if audience:
-        confirm_params["audience"] = audience
-
-    base_url = config.app_url or ""
-    confirm_url = f"{base_url}/authorize/confirm?{urlencode(confirm_params)}"
-
     return {
         "type": "consent",
         "message": f"Application '{client.title}' is requesting access.",
@@ -116,7 +97,6 @@ def handle_authorize(
         "requested_scopes": requested_scopes or [],
         "audience": audience,
         "redirect_uri": redirect_uri,
-        "confirm_url": confirm_url,
     }
 
 
@@ -131,9 +111,12 @@ def handle_authorize_confirm(
     username: str,
     config: ServerConfig,
 ) -> str:
-    """Handles flow after the user has authenticated and authorized the request
+    """Create an authorization code and redirect to the client with the code.
 
-    Sets up the authorization code and redirects to the client with the code.
+    Assumes that the user has authenticated themselves, reviewed the consent page,
+    and confirmed the authorization request, marking their consent token as consented to.
+    The confirmed token has then been associated with the parameters passed to this
+    function to create a valid authorization code and redirect URL.
     """
     code = create_authorization_code(
         db_path=config.db_path,
