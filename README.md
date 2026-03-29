@@ -55,6 +55,8 @@ basic-oauth2-server serve \
   --default-client-secret my-secret \
   --default-client-signing-secret my-signing-key \
   --default-client-algorithm HS256 \
+  --default-client-scopes "read write" \
+  --default-client-redirect-uris "https://some-app.test/callback" \
   --create-default-user \
   --default-username alice \
   --default-password secret \
