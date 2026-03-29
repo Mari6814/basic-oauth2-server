@@ -117,62 +117,63 @@ def main(args: list[str] | None = None) -> int:
         help="Token expiry in seconds (default: 3600)",
     )
 
-    # Root client bootstrapping
+    # Default client bootstrapping
     serve_parser.add_argument(
-        "--create-root-client",
+        "--create-default-client",
         action="store_true",
-        help="Create or update the root OAuth client on startup",
+        help="Create the default OAuth client on startup (skipped if it already exists)",
     )
     serve_parser.add_argument(
-        "--root-client-id",
-        default="root",
-        help="Client ID for the root client (default: root)",
+        "--default-client-id",
+        default="default",
+        help="Client ID for the default client (default: default)",
     )
     serve_parser.add_argument(
-        "--root-client-secret",
-        help="Secret for the root client. Supports @file, base64:, 0x formats. Auto-generated and printed if omitted.",
+        "--default-client-secret",
+        dest="default_client_secret",
+        help="Secret for the default client. Supports @file, base64:, 0x formats. Auto-generated and printed if omitted.",
     )
     serve_parser.add_argument(
-        "--root-client-algorithm",
-        dest="root_client_algorithm",
+        "--default-client-algorithm",
+        dest="default_client_algorithm",
         default="HS256",
         choices=[alg.name for alg in SymmetricAlgorithm]
         + [alg.name for alg in AsymmetricAlgorithm],
-        help="JWT signing algorithm for the root client (default: HS256)",
+        help="JWT signing algorithm for the default client (default: HS256)",
     )
     serve_parser.add_argument(
-        "--root-client-signing-secret",
-        dest="root_client_signing_secret",
-        help="Signing key for the root client. For HMAC (HS*): supports @file, base64:, 0x formats; auto-generated and printed if omitted. For asymmetric algorithms: treated as a private key file path by default (same as @file).",
+        "--default-client-signing-secret",
+        dest="default_client_signing_secret",
+        help="Signing key for the default client. For HMAC (HS*): supports @file, base64:, 0x formats; auto-generated and printed if omitted. For asymmetric algorithms: treated as a private key file path by default (same as @file).",
     )
     serve_parser.add_argument(
-        "--root-client-scopes",
-        dest="root_client_scopes",
+        "--default-client-scopes",
+        dest="default_client_scopes",
         action="append",
-        help="Scopes for the root client (space-separated; can be repeated)",
+        help="Scopes for the default client (space-separated; can be repeated)",
     )
     serve_parser.add_argument(
-        "--root-client-audiences",
-        dest="root_client_audiences",
+        "--default-client-audiences",
+        dest="default_client_audiences",
         action="append",
-        help="Audiences for the root client (space-separated; can be repeated)",
+        help="Audiences for the default client (space-separated; can be repeated)",
     )
 
-    # Root user bootstrapping
+    # Default user bootstrapping
     serve_parser.add_argument(
-        "--create-root-user",
+        "--create-default-user",
         action="store_true",
-        help="Create or update the root user on startup",
+        help="Create or update the default user on startup",
     )
     serve_parser.add_argument(
-        "--root-username",
-        default="root",
-        help="Username for the root user (default: root)",
+        "--default-username",
+        default="default",
+        help="Username for the default user (default: default)",
     )
     serve_parser.add_argument(
-        "--root-password",
-        dest="root_password",
-        help="Password for the root user. Prompted securely if omitted. This option is for automation use cases.",
+        "--default-password",
+        dest="default_password",
+        help="Password for the default user. Prompted securely if omitted. This option is for automation use cases.",
     )
 
     # clients command
@@ -322,18 +323,18 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
-def _ensure_root_client(args: argparse.Namespace) -> None:
-    """Create the root OAuth client if it does not already exist."""
-    client_id = args.root_client_id
+def _ensure_default_client(args: argparse.Namespace) -> None:
+    """Create the default OAuth client if it does not already exist."""
+    client_id = args.default_client_id
     if get_client(args.db, client_id) is not None:
-        print(f"Root client '{client_id}' already exists, skipping.")
+        print(f"Default client '{client_id}' already exists, skipping.")
         return
 
-    algorithm = get_algorithm(args.root_client_algorithm or "HS256")
+    algorithm = get_algorithm(args.default_client_algorithm or "HS256")
 
-    if args.root_client_secret:
+    if args.default_client_secret:
         client_secret_raw = decode_prefixed_utf8(
-            args.root_client_secret, allow_from_file=True
+            args.default_client_secret, allow_from_file=True
         )
         generated_secret = False
     else:
@@ -343,30 +344,32 @@ def _ensure_root_client(args: argparse.Namespace) -> None:
     signing_secret_raw: bytes | None = None
     generated_signing_secret = False
     if is_symmetric(algorithm):
-        if args.root_client_signing_secret:
+        if args.default_client_signing_secret:
             signing_secret_raw = decode_prefixed_utf8(
-                args.root_client_signing_secret, allow_from_file=True
+                args.default_client_signing_secret, allow_from_file=True
             )
         else:
             signing_secret_raw = secrets.token_bytes(32)
             generated_signing_secret = True
     else:
-        if args.root_client_signing_secret:
-            normalized = _normalize_key_path(args.root_client_signing_secret)
+        if args.default_client_signing_secret:
+            normalized = _normalize_key_path(args.default_client_signing_secret)
             if normalized is not None:
                 signing_secret_raw = decode_prefixed_utf8(
                     normalized, allow_from_file=True
                 )
 
-    # root_client_scopes is a list of space-separated scope strings that each have to split
+    # default_client_scopes is a list of space-separated scope strings that each have to be split
     scopes: list[str] | None = None
-    if args.root_client_scopes is not None:
-        scopes = [s for entry in args.root_client_scopes for s in entry.split()]
+    if args.default_client_scopes is not None:
+        scopes = [s for entry in args.default_client_scopes for s in entry.split()]
 
-    # same here: root_client_audiences is an array of space separated audience strings that each have to be split into the final audiences list
+    # same here: default_client_audiences is an array of space separated audience strings that each have to be split into the final audiences list
     audiences: list[str] | None = None
-    if args.root_client_audiences is not None:
-        audiences = [a for entry in args.root_client_audiences for a in entry.split()]
+    if args.default_client_audiences is not None:
+        audiences = [
+            a for entry in args.default_client_audiences for a in entry.split()
+        ]
 
     create_client(
         db_path=args.db,
@@ -378,30 +381,30 @@ def _ensure_root_client(args: argparse.Namespace) -> None:
         audiences=audiences,
     )
 
-    print(f"Created root client '{client_id}'")
+    print(f"Created default client '{client_id}'")
     if generated_secret:
         print(
-            f"OAUTH_ROOT_CLIENT_SECRET={base64.b64encode(client_secret_raw).decode()}"
+            f"OAUTH_DEFAULT_CLIENT_SECRET={base64.b64encode(client_secret_raw).decode()}"
         )
     if is_symmetric(algorithm) and generated_signing_secret and signing_secret_raw:
         print(f"JWT_ALGORITHM={algorithm.name}")
         print(f'JWT_SECRET="hex:{signing_secret_raw.hex()}"')
 
 
-def _ensure_root_user(args: argparse.Namespace) -> None:
-    """Create or update the root user."""
-    username = args.root_username
-    password = args.root_password or getpass.getpass(
-        f"Password for root user '{username}': "
+def _ensure_default_user(args: argparse.Namespace) -> None:
+    """Create or update the default user."""
+    username = args.default_username
+    password = args.default_password or getpass.getpass(
+        f"Password for default user '{username}': "
     )
 
     existing = get_user(args.db, username)
     if existing is None:
         create_user(args.db, username, password)
-        print(f"Created root user '{username}'")
+        print(f"Created default user '{username}'")
     else:
         update_user_password(args.db, username, password)
-        print(f"Updated root user '{username}'")
+        print(f"Updated default user '{username}'")
 
 
 def _normalize_key_path(value: str | None) -> str | None:
@@ -444,10 +447,10 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         token_expires_in=args.token_expires_in,
     )
 
-    if args.create_root_client:
-        _ensure_root_client(args)
-    if args.create_root_user:
-        _ensure_root_user(args)
+    if args.create_default_client:
+        _ensure_default_client(args)
+    if args.create_default_user:
+        _ensure_default_user(args)
 
     print(f"Starting OAuth server on {config.host}:{config.port}")
     run_server(config)

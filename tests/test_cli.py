@@ -277,13 +277,13 @@ class TestServeCreateRootClient:
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
         with patch("basic_oauth2_server.server.run_server"):
-            result = main(["--db", db, "serve", "--create-root-client"])
+            result = main(["--db", db, "serve", "--create-default-client"])
         assert result == 0
         out = capsys.readouterr().out
-        assert "Created root client 'root'" in out
-        assert "OAUTH_ROOT_CLIENT_SECRET=" in out
+        assert "Created default client 'default'" in out
+        assert "OAUTH_DEFAULT_CLIENT_SECRET=" in out
         assert "JWT_SECRET=" in out
-        client = get_client(db, "root")
+        client = get_client(db, "default")
         assert client is not None
         assert client.algorithm == "HS256"
 
@@ -296,15 +296,15 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-secret",
+                    "--create-default-client",
+                    "--default-client-secret",
                     "mysecret",
                 ]
             )
         assert result == 0
         out = capsys.readouterr().out
-        assert "OAUTH_ROOT_CLIENT_SECRET=" not in out
-        client = get_client(db, "root")
+        assert "OAUTH_DEFAULT_CLIENT_SECRET=" not in out
+        client = get_client(db, "default")
         assert client is not None
         assert client.verify_client_secret(b"mysecret")
 
@@ -312,10 +312,10 @@ class TestServeCreateRootClient:
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
         with patch("basic_oauth2_server.server.run_server"):
-            main(["--db", db, "serve", "--create-root-client"])
+            main(["--db", db, "serve", "--create-default-client"])
         capsys.readouterr()
         with patch("basic_oauth2_server.server.run_server"):
-            result = main(["--db", db, "serve", "--create-root-client"])
+            result = main(["--db", db, "serve", "--create-default-client"])
         assert result == 0
         out = capsys.readouterr().out
         assert "skipping" in out.lower()
@@ -330,8 +330,8 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-algorithm",
+                    "--create-default-client",
+                    "--default-client-algorithm",
                     "HS256",
                 ]
             )
@@ -349,17 +349,17 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-algorithm",
+                    "--create-default-client",
+                    "--default-client-algorithm",
                     "HS256",
-                    "--root-client-signing-secret",
+                    "--default-client-signing-secret",
                     "0xdeadbeef",
                 ]
             )
         assert result == 0
         out = capsys.readouterr().out
         assert "JWT_SECRET=" not in out
-        client = get_client(db, "root")
+        client = get_client(db, "default")
         assert client is not None
         assert client.get_signing_secret() == bytes.fromhex("deadbeef")
 
@@ -372,15 +372,15 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-algorithm",
+                    "--create-default-client",
+                    "--default-client-algorithm",
                     "RS256",
                 ]
             )
         assert result == 0
         out = capsys.readouterr().out
         assert "JWT_SECRET=" not in out
-        client = get_client(db, "root")
+        client = get_client(db, "default")
         assert client is not None
         assert client.algorithm == "RS256"
 
@@ -397,15 +397,15 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-algorithm",
+                    "--create-default-client",
+                    "--default-client-algorithm",
                     "RS256",
-                    "--root-client-signing-secret",
+                    "--default-client-signing-secret",
                     str(key_file),
                 ]
             )
         assert result == 0
-        client = get_client(db, "root")
+        client = get_client(db, "default")
         assert client is not None
         assert client.get_signing_secret() == key_file.read_bytes()
 
@@ -418,12 +418,12 @@ class TestServeCreateRootClient:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-client",
-                    "--root-client-id",
+                    "--create-default-client",
+                    "--default-client-id",
                     "myrootclient",
-                    "--root-client-scopes",
+                    "--default-client-scopes",
                     "read write",
-                    "--root-client-audiences",
+                    "--default-client-audiences",
                     "https://api.example.com",
                 ]
             )
@@ -445,15 +445,15 @@ class TestServeCreateRootUser:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-user",
-                    "--root-password",
+                    "--create-default-user",
+                    "--default-password",
                     "secret123",
                 ]
             )
         assert result == 0
         out = capsys.readouterr().out
-        assert "Created root user 'root'" in out
-        user = get_user(db, "root")
+        assert "Created default user 'default'" in out
+        user = get_user(db, "default")
         assert user is not None
         assert user.verify_password("secret123")
 
@@ -462,10 +462,10 @@ class TestServeCreateRootUser:
     ) -> None:
         with patch("getpass.getpass", return_value="prompted-pw") as mock_getpass:
             with patch("basic_oauth2_server.server.run_server"):
-                result = main(["--db", db, "serve", "--create-root-user"])
+                result = main(["--db", db, "serve", "--create-default-user"])
         assert result == 0
         mock_getpass.assert_called_once()
-        user = get_user(db, "root")
+        user = get_user(db, "default")
         assert user is not None
         assert user.verify_password("prompted-pw")
 
@@ -474,17 +474,31 @@ class TestServeCreateRootUser:
     ) -> None:
         with patch("basic_oauth2_server.server.run_server"):
             main(
-                ["--db", db, "serve", "--create-root-user", "--root-password", "old-pw"]
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-default-user",
+                    "--default-password",
+                    "old-pw",
+                ]
             )
         capsys.readouterr()
         with patch("basic_oauth2_server.server.run_server"):
             result = main(
-                ["--db", db, "serve", "--create-root-user", "--root-password", "new-pw"]
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-default-user",
+                    "--default-password",
+                    "new-pw",
+                ]
             )
         assert result == 0
         out = capsys.readouterr().out
-        assert "Updated root user 'root'" in out
-        user = get_user(db, "root")
+        assert "Updated default user 'default'" in out
+        user = get_user(db, "default")
         assert user is not None
         assert user.verify_password("new-pw")
         assert not user.verify_password("old-pw")
@@ -494,15 +508,22 @@ class TestServeCreateRootUser:
     ) -> None:
         with patch("basic_oauth2_server.server.run_server"):
             main(
-                ["--db", db, "serve", "--create-root-user", "--root-password", "old-pw"]
+                [
+                    "--db",
+                    db,
+                    "serve",
+                    "--create-default-user",
+                    "--default-password",
+                    "old-pw",
+                ]
             )
         capsys.readouterr()
         with patch("getpass.getpass", return_value="new-pw-prompted") as mock_getpass:
             with patch("basic_oauth2_server.server.run_server"):
-                result = main(["--db", db, "serve", "--create-root-user"])
+                result = main(["--db", db, "serve", "--create-default-user"])
         assert result == 0
         mock_getpass.assert_called_once()
-        user = get_user(db, "root")
+        user = get_user(db, "default")
         assert user is not None
         assert user.verify_password("new-pw-prompted")
         assert not user.verify_password("old-pw")
@@ -514,10 +535,10 @@ class TestServeCreateRootUser:
                     "--db",
                     db,
                     "serve",
-                    "--create-root-user",
-                    "--root-username",
+                    "--create-default-user",
+                    "--default-username",
                     "admin",
-                    "--root-password",
+                    "--default-password",
                     "adminpass",
                 ]
             )

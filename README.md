@@ -58,10 +58,26 @@ basic-oauth2-server clients create \
   --algorithm HS256
 ```
 
+
 ### 2. Start the server
 
 ```bash
 basic-oauth2-server serve --port 8080 --host localhost
+```
+
+**Alternatively**, instead of first creating the client, you can use the
+*"default client" feature of the "serve" command
+to directly create a client on server startup with the specified parameters,
+which is useful for automated deployments where you don't have the opportunity
+to run separate CLI commands for setup:
+
+```bash
+basic-oauth2-server serve \
+  --create-default-client \
+  --default-client-id my-app \
+  --default-client-secret my-secret \
+  --default-client-signing-secret my-signing-key \
+  --default-client-algorithm HS256
 ```
 
 ### 3. Request a token
@@ -111,7 +127,25 @@ basic-oauth2-server clients create \
 
 The redirect uri has to be an exact match for the `redirect_uri` parameter used in the authorization request, otherwise the server will reject the request. You get the redirect uri from your client, you of course do not know where their application runs.
 
-##### 3. Generate the authorization URL
+##### 3. Start the server
+
+```bash
+basic-oauth2-server serve --port 8080 --host localhost
+```
+
+**Alternatively**, you can use the *default client* feature to create the client on server startup:
+
+```bash
+basic-oauth2-server serve \
+  --create-default-client \
+  --default-client-id my-app \
+  --default-client-secret my-secret \
+  --default-client-signing-secret my-signing-key \
+  --default-client-algorithm HS256 \
+  --default-client-redirect-uris "http://localhost:8080/callback"
+```
+
+##### 4. Generate the authorization URL
 With the client id, the client can generate an authorization request URL that the user can visit to approve the client's access request. The URL includes parameters like `response_type`, `client_id`, `redirect_uri`, `scope`, `state`, and PKCE parameters if used.
 
 ```
@@ -176,20 +210,20 @@ basic-oauth2-server serve [options]
 
 #### Server bootstrapping
 
-The `serve` command can create a root client and/or root user on startup, which is useful for automated deployments:
+The `serve` command can create a default client and/or default user on startup, which is useful for automated deployments:
 
 | Option                        | Default   | Description                                                                 |
 | ----------------------------- | --------- | --------------------------------------------------------------------------- |
-| `--create-root-client`        | -         | Create the root OAuth client on startup (skipped if it already exists)      |
-| `--root-client-id`            | `root`    | Client ID for the root client                                               |
-| `--root-client-secret`        | -         | Secret for the root client. Auto-generated and printed if omitted.          |
-| `--root-client-algorithm`     | `HS256`   | JWT signing algorithm for the root client                                   |
-| `--root-client-signing-secret`| -         | Signing key for the root client. Auto-generated and printed if omitted (HS*)|
-| `--root-client-scopes`        | -         | Space-separated scopes for the root client (can be repeated)                |
-| `--root-client-audiences`     | -         | Space-separated audiences for the root client (can be repeated)             |
-| `--create-root-user`          | -         | Create or update the root user on startup                                   |
-| `--root-username`             | `root`    | Username for the root user                                                  |
-| `--root-password`             | -         | Password for the root user. Prompted securely if omitted.                   |
+| `--create-default-client`        | -         | Create the default OAuth client on startup (skipped if it already exists)      |
+| `--default-client-id`            | `default`    | Client ID for the default client                                               |
+| `--default-client-secret`        | -         | Secret for the default client. Auto-generated and printed if omitted.          |
+| `--default-client-algorithm`     | `HS256`   | JWT signing algorithm for the default client                                   |
+| `--default-client-signing-secret`| -         | Signing key for the default client. Auto-generated and printed if omitted (HS*)|
+| `--default-client-scopes`        | -         | Space-separated scopes for the default client (can be repeated)                |
+| `--default-client-audiences`     | -         | Space-separated audiences for the default client (can be repeated)             |
+| `--create-default-user`          | -         | Create or update the default user on startup                                   |
+| `--default-username`             | `default`    | Username for the default user                                                  |
+| `--default-password`             | -         | Password for the default user. Prompted securely if omitted.                   |
 
 ### clients
 
