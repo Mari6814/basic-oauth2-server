@@ -46,6 +46,26 @@ pip install basic-oauth2-server[admin]
 A quick example that shows how to create a client, start the server and make a
 client_credentials token request.
 
+TLDR: You can run the "serve" command with a default client and user, while setting up hosting settings and asymmetric signing keys if you have them, all in one command:
+
+```bash
+basic-oauth2-server serve \
+  --create-default-client \
+  --default-client-id my-app \
+  --default-client-secret my-secret \
+  --default-client-signing-secret my-signing-key \
+  --default-client-algorithm HS256 \
+  --create-default-user \
+  --default-username alice \
+  --default-password secret \
+  --port 8080 \
+  --host localhost \
+  --rsa-private-key ./private.pem \
+  --rsa-key-id my-rsa-key \
+  --eddsa-private-key ./ed25519.pem \
+  --eddsa-key-id my-eddsa-key
+```
+
 ### 1. Create a client
 Use the `clients` cli to create a new client that can request access to
 protected resources via this authorization server.
