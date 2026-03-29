@@ -185,13 +185,7 @@ def handle_authorization_code(
 
     auth_code = get_authorization_code(config.db_path, code)
     if not auth_code:
-        raise InvalidRequestException("Invalid authorization code")
-
-    if auth_code.used:
-        raise InvalidGrantException("Authorization code already used")
-
-    if auth_code.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
-        raise InvalidGrantException("Authorization code expired")
+        raise InvalidGrantException("Invalid or expired authorization code")
 
     if auth_code.client_id != client_id:
         raise InvalidGrantException("Client ID mismatch")

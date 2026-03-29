@@ -188,9 +188,10 @@ class TestAuthorizationCodeTimestamps:
             auth_code.used = True
             session.commit()
 
-        updated = get_authorization_code(db_path, code)
-        assert updated is not None
-        assert updated.updated_at >= original_updated_at
+        with get_session(db_path) as session:
+            updated = session.get(AuthorizationCode, code)
+            assert updated is not None
+            assert updated.updated_at >= original_updated_at
 
 
 class TestUser:

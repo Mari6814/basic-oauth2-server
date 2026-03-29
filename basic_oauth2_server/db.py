@@ -191,10 +191,18 @@ def create_authorization_code(
 
 
 def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
-    """Retrieve an authorization code record."""
+    """Retrieve a non-expired, unused authorization code record."""
     with get_session(db_path) as session:
-        # TODO: Only get *non-expired* and *unused* codes here instead of external functions
-        return session.get(AuthorizationCode, code)
+        auth_code = session.get(AuthorizationCode, code)
+        if auth_code is None:
+            return None
+        if auth_code.used:
+            return None
+        if auth_code.expires_at.replace(tzinfo=timezone.utc) < datetime.now(
+            timezone.utc
+        ):
+            return None
+        return auth_code
 
 
 def mark_authorization_code_used(db_path: str, code: str) -> None:
