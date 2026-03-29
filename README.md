@@ -27,7 +27,7 @@ can read the `--help` output, you can configure this oauth2 provider.
 - **Multiple Signing Algorithms** - Support for HMAC-SHA (HS256, HS384, HS512), RSA (RS256, RS384, RS512), RSA-PSS (PS256, PS384, PS512), ECDSA (ES256, ES384, ES512), and EdDSA (Ed25519) that can be configured per client, with support for multiple active keys and automatic JWT `kid` header population
 - **SQLite Persistence** - Simple file-based database, no external DB required
 - **CLI Client & User Management** - Create and manage clients (for client_credentials) and users (for authorization_code) from the command line
-- **Optional Admin Dashboard** - Web UI for client management (localhost-only by default)
+- **Optional Admin Dashboard** - Web UI for client and user management (localhost-only by default)
 - **Single Unified CLI** - One command (`basic-oauth2-server`) for all operations
 
 ## Installation
