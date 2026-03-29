@@ -76,8 +76,7 @@ def handle_authorize(
 
     client = get_client(config.db_path, client_id)
     if not client:
-        # TODO: This should probably be a 401?
-        raise InvalidClientException("Invalid client", status_code=400)
+        raise InvalidClientException("Invalid client")
 
     allowed_uris = client.get_redirect_uris_list()
     # TODO: As mentioned in the test case, if allowed_uris is empty, we should just not allow any redirect. Remove and fix test.
