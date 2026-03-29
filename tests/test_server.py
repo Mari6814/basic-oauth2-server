@@ -792,6 +792,7 @@ def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:
             "redirect_uri": "http://localhost/callback",
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            "state": "reuse-state",
         },
         headers=auth_headers,
         follow_redirects=False,
@@ -837,6 +838,7 @@ def test_authorization_code_wrong_verifier(client_with_db: TestClient) -> None:
             "redirect_uri": "http://localhost/callback",
             "code_challenge": challenge,
             "code_challenge_method": "S256",
+            "state": "wrong-verifier-state",
         },
         headers=auth_headers,
         follow_redirects=False,
@@ -883,6 +885,7 @@ def test_authorize_requires_auth(client_with_db: TestClient) -> None:
             "redirect_uri": "http://localhost/callback",
             "code_challenge": "test",
             "code_challenge_method": "S256",
+            "state": "test-state",
         },
     )
     assert response.status_code == 401
@@ -899,10 +902,11 @@ def test_authorize_invalid_client(client_with_db: TestClient) -> None:
             "redirect_uri": "http://localhost/callback",
             "code_challenge": "test",
             "code_challenge_method": "S256",
+            "state": "test-state",
         },
         headers=auth_headers,
     )
-    assert response.status_code == 400
+    assert response.status_code == 401
     assert response.json()["error"] == "invalid_client"
 
 
@@ -918,6 +922,7 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
             "code_challenge": "test",
             "code_challenge_method": "S256",
             "scope": "admin",
+            "state": "test-state",
         },
         headers=auth_headers,
     )
@@ -946,6 +951,7 @@ def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
             "code_challenge": challenge,
             "code_challenge_method": "S512",
             "scope": "read",
+            "state": "s512-state",
         },
         headers=auth_headers,
         follow_redirects=False,
@@ -981,6 +987,7 @@ def test_authorization_code_flow_s512_wrong_verifier(
             "redirect_uri": "http://localhost/callback",
             "code_challenge": challenge,
             "code_challenge_method": "S512",
+            "state": "s512-wrong-state",
         },
         headers=auth_headers,
         follow_redirects=False,
@@ -1026,6 +1033,7 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
             "redirect_uri": "https://example.com/callback",
             "code_challenge": "test-challenge",
             "code_challenge_method": "S256",
+            "state": "test-state",
         },
         headers=auth_headers,
     )
@@ -1040,6 +1048,7 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
             "redirect_uri": "https://evil.com/callback",
             "code_challenge": "test-challenge",
             "code_challenge_method": "S256",
+            "state": "test-state",
         },
         headers=auth_headers,
     )
@@ -1048,8 +1057,7 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
 
 
 def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
-    """Test that redirect_uri is allowed if no redirect_uris are configured."""
-    # TODO: I'm not sure if this is a good idea. Maybe empty should just mean "no valid redirect URIs" instead of "allow any"?
+    """Test that empty redirect_uris rejects all redirect URIs."""
     create_client(
         db_path=temp_db,
         client_id="open-client",
@@ -1071,10 +1079,12 @@ def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
             "redirect_uri": "https://any.example.com/callback",
             "code_challenge": "test-challenge",
             "code_challenge_method": "S256",
+            "state": "test-state",
         },
         headers=auth_headers,
     )
-    assert response.status_code == 200
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
 
 
 def test_token_expires_in_configurable(temp_db: str) -> None:

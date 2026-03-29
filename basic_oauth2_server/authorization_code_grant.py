@@ -2,7 +2,6 @@ import logging
 from typing import Literal
 from urllib.parse import urlencode
 
-from datetime import datetime, timezone
 import hashlib
 import base64
 
@@ -33,7 +32,7 @@ def handle_authorize(
     code_challenge_method: str,
     scope: list[str] | None,
     audience: str | None,
-    state: str | None,
+    state: str,
     config: ServerConfig,
 ) -> dict[
     Literal[
@@ -99,15 +98,12 @@ def handle_authorize(
         "redirect_uri": redirect_uri,
         "code_challenge": code_challenge,
         "code_challenge_method": code_challenge_method,
+        "state": state,
     }
     if scope:
         confirm_params["scope"] = " ".join(scope)
     if audience:
         confirm_params["audience"] = audience
-
-    # TODO: State should be required
-    if state:
-        confirm_params["state"] = state
 
     base_url = config.app_url or ""
     confirm_url = f"{base_url}/authorize/confirm?{urlencode(confirm_params)}"
@@ -131,7 +127,7 @@ def handle_authorize_confirm(
     code_challenge_method: str,
     scope: list[str] | None,
     audience: str | None,
-    state: str | None,
+    state: str,
     username: str,
     config: ServerConfig,
 ) -> str:
@@ -151,11 +147,7 @@ def handle_authorize_confirm(
         code_challenge_method=code_challenge_method,
     )
 
-    redirect_params: dict[str, str] = {"code": code}
-
-    # TODO: The state should just be required. Remove the option to not include it, and remove the if-check here, then update test case
-    if state:
-        redirect_params["state"] = state
+    redirect_params: dict[str, str] = {"code": code, "state": state}
 
     redirect_url = f"{redirect_uri}?{urlencode(redirect_params)}"
     logger.info(
