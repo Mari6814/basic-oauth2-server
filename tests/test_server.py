@@ -14,7 +14,7 @@ from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import create_client, init_db
+from basic_oauth2_server.db import create_client, create_user, init_db
 from basic_oauth2_server.server import create_app
 
 

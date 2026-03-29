@@ -1,6 +1,9 @@
 """Configuration management for the OAuth server."""
 
 import os
+import base64
+import secrets
+import sys
 from typing import Self
 from dataclasses import dataclass
 from functools import cache
@@ -116,13 +119,31 @@ class AdminConfig:
         )
 
 
+def ensure_app_key() -> None:
+    """Ensure APP_KEY is set, generating a random one if absent.
+
+    If a key is generated, it will be printed to stdout and a warning will be printed to stderr.
+    """
+    if os.environ.get("APP_KEY"):
+        return None
+    raw = secrets.token_bytes(32)
+    b64 = base64.b64encode(raw).decode()
+    os.environ["APP_KEY"] = b64
+    print(f"APP_KEY={b64}")
+    print(
+        "WARNING: APP_KEY was not set. A temporary key has been generated for this "
+        "session. Add the line above to your environment (e.g. export APP_KEY=...) "
+        "or you will be unable to access the data created during this session after "
+        "it ends.",
+        file=sys.stderr,
+    )
+
+
 def get_app_key() -> bytes:
     """Get the APP_KEY for encryption, raising if not set."""
     key = os.environ.get("APP_KEY")
     if not key:
         raise ValueError("APP_KEY environment variable is required")
-    # Handle base64-encoded keys
-    import base64
 
     try:
         return base64.b64decode(key)

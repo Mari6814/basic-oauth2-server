@@ -78,7 +78,6 @@ def create_app(config: ServerConfig) -> FastAPI:
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
-        state: Annotated[str | None, Query()] = None,
     ) -> JSONResponse:
         """Authorization endpoint. Requires HTTP Basic Auth to identify the user.
 

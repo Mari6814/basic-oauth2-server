@@ -5,12 +5,11 @@ import secrets
 import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
-from .utils import decode_prefixed_utf8
-
 import gradio as gr
 
-from basic_oauth2_server.config import AdminConfig
-from basic_oauth2_server.db import (
+from .utils import decode_prefixed_utf8
+from .config import ensure_app_key, AdminConfig
+from .db import (
     create_client,
     delete_client,
     get_client,
@@ -21,7 +20,7 @@ from basic_oauth2_server.db import (
     list_users,
     update_user_password,
 )
-from basic_oauth2_server.jwt import get_algorithm, is_symmetric
+from .jwt import get_algorithm, is_symmetric
 
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
@@ -352,5 +351,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
 
 def run_admin(config: AdminConfig) -> None:
     """Run the admin dashboard with the given configuration."""
+    ensure_app_key()
+
     app = create_admin_app(config)
     app.launch(server_name=config.host, server_port=config.port)

@@ -26,7 +26,7 @@ from .db import (
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 from basic_oauth2_server.utils import decode_prefixed_utf8
-from basic_oauth2_server.config import AdminConfig, ServerConfig
+from basic_oauth2_server.config import AdminConfig, ServerConfig, ensure_app_key
 
 
 def main(args: list[str] | None = None) -> int:
@@ -307,6 +307,8 @@ def main(args: list[str] | None = None) -> int:
     if not parsed.command:
         parser.print_help()
         return 1
+
+    ensure_app_key()
 
     if parsed.command == "serve":
         return _cmd_serve(parsed)
