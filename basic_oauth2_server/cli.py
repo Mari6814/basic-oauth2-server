@@ -191,6 +191,12 @@ def main(args: list[str] | None = None) -> int:
         help="Client identifier (auto-generated if omitted, and must be unique)",
     )
     create_parser.add_argument(
+        "-t",
+        "--title",
+        dest="title",
+        help="Display title for the client shown on consent page (defaults to client ID)",
+    )
+    create_parser.add_argument(
         "-s",
         "--client-secret",
         dest="client_secret",
@@ -455,6 +461,7 @@ def _cmd_clients(args: argparse.Namespace) -> int:
     if args.clients_command == "create":
         create_args = ClientCreateArgs(
             client_id=args.client_id,
+            title=args.title,
             client_secret=args.client_secret,
             algorithm=args.algorithm,
             signing_secret=args.signing_secret,
@@ -475,6 +482,7 @@ def _cmd_clients(args: argparse.Namespace) -> int:
 # Define namespace with proper types for client creation arguments
 class ClientCreateArgs(argparse.Namespace):
     client_id: str | None
+    title: str | None
     client_secret: str | None
     algorithm: str
     signing_secret: str | None
@@ -518,6 +526,7 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
         scopes=scopes,
         audiences=audiences,
         redirect_uris=redirect_uris,
+        title=args.title,
     )
 
     print(f"OAUTH_CLIENT_ID={client.client_id}")
@@ -541,10 +550,11 @@ def _cmd_clients_list(args: argparse.Namespace) -> int:
         return 0
 
     print(
-        f"{'Client ID':<36} {'Algorithm':<10} {'Scopes':<15} {'Audiences':<15} {'Last Used'}"
+        f"{'Client ID':<36} {'Title':<20} {'Algorithm':<10} {'Scopes':<15} {'Audiences':<15} {'Last Used'}"
     )
-    print("-" * (36 + 10 + 15 + 15 + 20 + 4))
+    print("-" * (36 + 20 + 10 + 15 + 15 + 20 + 5))
     for client in clients:
+        title = client.title or "(none)"
         scopes = client.scopes or "(none)"
         audiences = client.audiences or "(none)"
         last_used = (
@@ -553,7 +563,7 @@ def _cmd_clients_list(args: argparse.Namespace) -> int:
             else "(never)"
         )
         print(
-            f"{client.client_id:<36} {client.algorithm:<10} {scopes:<15} {audiences:<15} {last_used}"
+            f"{client.client_id:<36} {title:<20} {client.algorithm:<10} {scopes:<15} {audiences:<15} {last_used}"
         )
 
     return 0

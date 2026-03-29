@@ -33,6 +33,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         return [
             [
                 c.client_id,
+                c.title or "",
                 c.algorithm,
                 c.scopes or "",
                 (
@@ -46,6 +47,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
 
     def add_client(
         client_id: str,
+        title: str,
         client_secret: str,
         algorithm: str,
         signing_secret: str,
@@ -93,6 +95,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 signing_secret=signing_secret_bytes,
                 scopes=scopes_list,
                 audiences=audiences_list,
+                title=title or None,
             )
 
             # Convert to base64 for example usage below. Reason: OAuth2 clients typically need to send the secret base64-encoded.
@@ -201,6 +204,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             clients_table = gr.Dataframe(
                 headers=[
                     "Client ID",
+                    "Title",
                     "Algorithm",
                     "Scopes",
                     "Last used",
@@ -218,6 +222,11 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         value=str(uuid.uuid4()),
                         label="Client ID",
                         placeholder="my-app",
+                    )
+                    new_title = gr.Textbox(
+                        label="Title",
+                        placeholder="My Application",
+                        info="Display name shown on the consent page (defaults to Client ID)",
                     )
                     new_client_secret = gr.Textbox(
                         value=f"base64:{base64.b64encode(secrets.token_bytes(32)).decode()}",
@@ -260,6 +269,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 fn=add_client,
                 inputs=[
                     new_client_id,
+                    new_title,
                     new_client_secret,
                     new_algorithm,
                     new_signing_secret,

@@ -41,11 +41,7 @@ class Client(TimestampMixin, Base):
 
     __tablename__ = "clients"
 
-    # TODO: We need a title that can be displayed on the consent page
-    # TODO: Add title to admin page
-    # TODO: Add title to client cli
-    # TODO: Then make not-nullable
-    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # The unique client identifier (public). This is the "username" for a client itself (not the user)
     client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
     # SHA256 hexdigest of client secret - the "password" used to obtain access tokens
@@ -112,9 +108,6 @@ class Client(TimestampMixin, Base):
         if not secret:
             return None
         return f"sha256:{hashlib.sha256(secret).hexdigest()}"
-
-
-# TODO: Verify that client_id is unique
 
 
 class User(TimestampMixin, Base):
@@ -274,22 +267,25 @@ def create_client(
     scopes: list[str] | None = None,
     audiences: list[str] | None = None,
     redirect_uris: list[str] | None = None,
+    title: str | None = None,
 ) -> Client:
     """Create a new OAuth client.
 
     Args:
         db_path: Path to the database.
         client_id: Unique client identifier.
-        secret: Client secret ("password") for OAuth authentication.
+        client_secret: Client secret ("password") for OAuth authentication.
         algorithm: JWT signing algorithm the client wants (HS256, RS256, EdDSA, etc.).
         signing_secret: Signing secret for HMAC algorithms (required for HS256, etc.).
         scopes: List of allowed scopes.
         audiences: List of allowed audiences.
         redirect_uris: List of allowed redirect URIs for authorization code flow.
+        title: Display title for the client (defaults to client_id).
     """
     with get_session(db_path) as session:
         client = Client(
             client_id=client_id,
+            title=title or client_id,
             algorithm=algorithm.name,
             scopes=",".join(scopes) if scopes else None,
             audiences=",".join(audiences) if audiences else None,
