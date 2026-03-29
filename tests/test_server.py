@@ -912,7 +912,6 @@ def test_authorize_invalid_client(client_with_db: TestClient) -> None:
 
 def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
     """Test that /authorize rejects invalid scopes."""
-    auth_headers = _basic_auth_header("testuser", "testpass")
     response = client_with_db.get(
         "/authorize",
         params={
@@ -924,7 +923,6 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
             "scope": "admin",
             "state": "test-state",
         },
-        headers=auth_headers,
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_scope"
@@ -1018,6 +1016,7 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
         signing_secret=b"redirect-signing-secret-12345",
         redirect_uris=["https://example.com/callback", "https://app.example.com/oauth"],
     )
+    create_user(temp_db, "testuser", "testpass")
 
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)
@@ -1065,6 +1064,7 @@ def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
         algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"open-signing-secret-123456",
     )
+    create_user(temp_db, "testuser", "testpass")
 
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)

@@ -3,13 +3,13 @@
 import logging
 from typing import Annotated
 
-from fastapi import FastAPI, Form, Depends, Query, Request
+from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import init_db
+from basic_oauth2_server.db import get_user, init_db
 from basic_oauth2_server.exceptions import (
     InvalidGrantException,
     InvalidRequestException,
@@ -112,10 +112,16 @@ def create_app(config: ServerConfig) -> FastAPI:
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
-        state: Annotated[str | None, Query()] = None,
     ) -> RedirectResponse:
         """Consent confirmation endpoint. Generates an auth code and redirects."""
-        # TODO: Authenticate the user credentials through the User table
+        db_user = get_user(config.db_path, user.username)
+        if not db_user or not db_user.verify_password(user.password):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid credentials",
+                headers={"WWW-Authenticate": 'Basic realm="OAuth Authorization"'},
+            )
+
         redirect_url = handle_authorize_confirm(
             client_id=client_id,
             redirect_uri=redirect_uri,
