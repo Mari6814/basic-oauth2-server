@@ -79,8 +79,7 @@ def handle_authorize(
         raise InvalidClientException("Invalid client")
 
     allowed_uris = client.get_redirect_uris_list()
-    # TODO: As mentioned in the test case, if allowed_uris is empty, we should just not allow any redirect. Remove and fix test.
-    if allowed_uris and redirect_uri not in allowed_uris:
+    if not allowed_uris or redirect_uri not in allowed_uris:
         raise InvalidRequestException("redirect_uri not registered for this client")
 
     requested_scopes = scope if scope else []
