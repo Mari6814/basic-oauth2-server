@@ -174,6 +174,13 @@ def handle_authorization_code(
     if not code_verifier:
         raise InvalidRequestException("Missing PKCE code_verifier")
 
+    client = get_client(config.db_path, client_id)
+    if not client:
+        raise InvalidClientException("Client not found")
+
+    if not client.verify_client_secret(client_secret):
+        raise InvalidClientException("Client authentication failed")
+
     auth_code = consume_authorization_code(config.db_path, code)
     if not auth_code:
         raise InvalidGrantException("Invalid or expired authorization code")
@@ -188,13 +195,6 @@ def handle_authorization_code(
         code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
     ):
         raise InvalidGrantException("PKCE code_verifier validation failed")
-
-    client = get_client(config.db_path, client_id)
-    if not client:
-        raise InvalidClientException("Client not found")
-
-    if not client.verify_client_secret(client_secret):
-        raise InvalidClientException("Client authentication failed")
 
     scopes = auth_code.scope.split() if auth_code.scope else None
 
