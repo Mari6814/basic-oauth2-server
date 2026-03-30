@@ -13,7 +13,6 @@ from basic_oauth2_server.db import create_client
 from basic_oauth2_server.exceptions import (
     InvalidAudienceException,
     InvalidClientException,
-    InvalidRequestException,
     InvalidScopeException,
 )
 
