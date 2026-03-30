@@ -63,7 +63,7 @@ def create_consent_token(
         state: PKCE/CSRF state parameter.
         scope: Space-separated scope string, or None.
         audience: Requested audience, or None.
-        expires_in: Token lifetime in seconds (default 10 minutes).
+        expires_in: Token lifetime in seconds.
         config: The current server environment required to get some parameters required for the token claims and signing.
 
     Returns:
