@@ -151,6 +151,8 @@ def handle_authorization_code(
     """Handle the authorization_code grant type with PKCE validation."""
     if not code:
         raise InvalidRequestException("Missing authorization code")
+    if not code_verifier:
+        raise InvalidRequestException("Missing PKCE code_verifier")
 
     auth_code = consume_authorization_code(config.db_path, code)
     if not auth_code:
@@ -162,12 +164,8 @@ def handle_authorization_code(
     if auth_code.redirect_uri and auth_code.redirect_uri != redirect_uri:
         raise InvalidGrantException("Redirect URI mismatch")
 
-    if (
-        not code_verifier
-        or not auth_code.code_challenge
-        or not _verify_pkce(
-            code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
-        )
+    if not auth_code.code_challenge or not _verify_pkce(
+        code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
     ):
         raise InvalidGrantException("PKCE code_verifier validation failed")
 
