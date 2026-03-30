@@ -166,11 +166,10 @@ def handle_authorization_code(
     if auth_code.redirect_uri and auth_code.redirect_uri != redirect_uri:
         raise InvalidGrantException("Redirect URI mismatch")
 
-    if auth_code.code_challenge:
-        if not _verify_pkce(
-            code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
-        ):
-            raise InvalidGrantException("PKCE code_verifier validation failed")
+    if not auth_code.code_challenge or not _verify_pkce(
+        code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
+    ):
+        raise InvalidGrantException("PKCE code_verifier validation failed")
 
     mark_authorization_code_used(config.db_path, code)
 
