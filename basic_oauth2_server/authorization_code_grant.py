@@ -101,7 +101,7 @@ def handle_authorize(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         state=state,
-        scope=scope or None,
+        scope=" ".join(scope) if scope else None,
         audience=audience,
         config=config,
     )
