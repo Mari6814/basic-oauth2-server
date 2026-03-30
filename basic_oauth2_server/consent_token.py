@@ -6,7 +6,6 @@ the user then can confirm or deny.
 """
 
 import base64
-import hmac
 import json
 import time
 from dataclasses import dataclass
@@ -115,15 +114,13 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
 
     try:
         sig = base64.urlsafe_b64decode(sig_b64 + "==")
-        payload_bytes = base64.urlsafe_b64decode(payload_b64 + "==")
+        payload_bytes = base64.urlsafe_b64decode(payload_b64 + "==").decode("utf-8")
         claims: dict[str, Any] = json.loads(payload_bytes)
     except Exception:
         raise InvalidRequestException("Invalid consent token")
 
     key = get_app_key()
-    signing_input = f"{header_b64}.{payload_b64}".encode()
-    expected = ALGORITHM.sign(key, signing_input)
-    if not hmac.compare_digest(sig, expected):
+    if not ALGORITHM.verify(key, f"{header_b64}.{payload_b64}", sig):
         raise InvalidRequestException("Invalid consent token signature")
 
     if "iss" not in claims or claims["iss"] != config.app_url:
