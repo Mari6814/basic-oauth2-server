@@ -46,7 +46,9 @@ pip install basic-oauth2-server[admin]
 A quick example that shows how to create a client, start the server and make a
 client_credentials token request.
 
-TLDR: You can run the "serve" command with a default client and user, while setting up hosting settings and asymmetric signing keys if you have them, all in one command:
+TLDR: You can run the "serve" command with a default client and user, while
+setting up hosting settings and asymmetric signing keys if you have them, all in
+one command:
 
 ```bash
 basic-oauth2-server serve \
@@ -61,11 +63,7 @@ basic-oauth2-server serve \
   --default-username alice \
   --default-password secret \
   --port 8080 \
-  --host localhost \
-  --rsa-private-key ./private.pem \
-  --rsa-key-id my-rsa-key \
-  --eddsa-private-key ./ed25519.pem \
-  --eddsa-key-id my-eddsa-key
+  --host localhost
 ```
 
 ### 1. Create a client
@@ -124,19 +122,54 @@ curl http://localhost:8080/oauth2/token \
   -d "grant_type=client_credentials"
 ```
 
+##### Client credentials flow access token response and structure
+
+```json
+{
+  "access_token": "ey...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "read write"
+}
+```
+
+The access token is a JWT signed via the client_secret you configured the client
+with. If you used an asymmetric algorithm, the server must be started with the
+corresponding private key, and the public key will be available at the
+`.well-known/jwks.json` endpoint for resource servers to verify the token. The
+access token of the client credentials flow is the following:
+
+```json
+{
+  "iss": "$APP_URL",
+  "sub": "<client_id>",
+  "aud": "<audience requested by client",
+  "scope": "read write",
+  "azp": "<client_id>",
+  "client_id": "<client_id>"
+}
+```
+
 #### Authorization code flow
-User-centric authentication where a user explicitly grants a client application access to resources on their behalf.
-The flow starts with a server creating an authorization request to the `/authorize` endpoint, which returns a consent page URL. The user visits the consent page, approves the request, and is redirected back to the client with an authorization code. The client then exchanges this code for an access token at the `/oauth2/token` endpoint.
+User-centric authentication where a user explicitly grants a client application
+access to resources on their behalf.  The flow starts with a server creating an
+authorization request to the `/authorize` endpoint, which returns a consent page
+URL. The user visits the consent page, approves the request, and is redirected
+back to the client with an authorization code. The client then exchanges this
+code for an access token at the `/oauth2/token` endpoint.
 
 ##### 1. Create a user (required for authorization code flow)
-You need a user that can "log in" to the authorization server and approve a client's access request. Create a user with the `users` CLI:
+You need a user that can "log in" to the authorization server and approve a
+client's access request. Create a user with the `users` CLI:
 
 ```bash
 basic-oauth2-server users create --username alice --password secret
 ```
 
 ##### 2. Create a client with allowed redirect URI
-For authorization code flow to work, you have to have a client that has an approved redirect URI configured. Create a client with the `--redirect-uri` option:
+For authorization code flow to work, you have to have a client that has an
+approved redirect URI configured. Create a client with the `--redirect-uri`
+option:
 
 ```bash
 basic-oauth2-server clients create \
@@ -147,7 +180,10 @@ basic-oauth2-server clients create \
   --redirect-uri http://localhost:8080/callback
 ```
 
-The redirect uri has to be an exact match for the `redirect_uri` parameter used in the authorization request, otherwise the server will reject the request. You get the redirect uri from your client, you of course do not know where their application runs.
+The redirect uri has to be an exact match for the `redirect_uri` parameter used
+in the authorization request, otherwise the server will reject the request. You
+get the redirect uri from your client, you of course do not know where their
+application runs.
 
 ##### 3. Start the server
 
@@ -168,7 +204,10 @@ basic-oauth2-server serve \
 ```
 
 ##### 4. Generate the authorization URL
-With the client id, the client can generate an authorization request URL that the user can visit to approve the client's access request. The URL includes parameters like `response_type`, `client_id`, `redirect_uri`, `scope`, `state`, and PKCE parameters if used.
+With the client id, the client can generate an authorization request URL that
+the user can visit to approve the client's access request. The URL includes
+parameters like `response_type`, `client_id`, `redirect_uri`, `scope`, `state`,
+and PKCE parameters if used.
 
 ```
 http://localhost:8080/authorize
@@ -179,6 +218,49 @@ http://localhost:8080/authorize
   &state=xyz
   &code_challenge=abc123
   &code_challenge_method=S256
+```
+
+##### 5. User approves access request and client uses `oauth2/token`
+The response of step 4. returns an `/authorize/confirm` URL where the user posts
+their consent token to approve the client's access request. If the `POST
+/authorize/confirm` is used, it will return a redirect to the requested
+`redirect_uri` with the authorization code and state as query parameters. The
+client receives tha authorization code and PKCE information that they use to
+post to `oauth2/token` endpoint to exchange the code for an access token,
+similar to the client credentials flow but with additional parameters:
+
+```
+curl -X POST http://localhost:8080/oauth2/token \
+  -d "grant_type=authorization_code" \
+  -d "client_id=my-app" \
+  -d "client_secret=$(echo -n 'my-secret' | base64)" \
+  -d "code=the-code-from-query-param" \
+  -d "redirect_uri=http://localhost:8080/callback" \
+  -d "code_verifier=the-code-verifier"
+```
+
+##### Authorization code flow access token response and structure
+The access token response has the same structure as the client credentials flow, but the access token itself contains additional claims about the user and the client:
+
+```{
+  "access_token": "ey...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "read write"
+}
+```
+
+The access token is a JWT with the following structure:
+
+```json
+{
+  "iss": "$APP_URL",
+  "sub": "<authenticated username>",
+  "aud": "<audience requested by client>",
+  "scope": "read write",
+  "azp": "<client_id>",
+  "client_id": "<client_id>"
+}
 ```
 
 ## CLI Commands
@@ -234,18 +316,19 @@ basic-oauth2-server serve [options]
 
 The `serve` command can create a default client and/or default user on startup, which is useful for automated deployments:
 
-| Option                        | Default   | Description                                                                 |
-| ----------------------------- | --------- | --------------------------------------------------------------------------- |
-| `--create-default-client`        | -         | Create the default OAuth client on startup (skipped if it already exists)      |
-| `--default-client-id`            | `default`    | Client ID for the default client                                               |
-| `--default-client-secret`        | -         | Secret for the default client. Auto-generated and printed if omitted.          |
-| `--default-client-algorithm`     | `HS256`   | JWT signing algorithm for the default client                                   |
-| `--default-client-signing-secret`| -         | Signing key for the default client. Auto-generated and printed if omitted (HS*)|
-| `--default-client-scopes`        | -         | Space-separated scopes for the default client (can be repeated)                |
-| `--default-client-audiences`     | -         | Space-separated audiences for the default client (can be repeated)             |
-| `--create-default-user`          | -         | Create or update the default user on startup                                   |
-| `--default-username`             | `default`    | Username for the default user                                                  |
-| `--default-password`             | -         | Password for the default user. Prompted securely if omitted.                   |
+| Option                            | Default   | Description                                                                     |
+| --------------------------------- | --------- | ---------------------------------------------------------------------------     |
+| `--create-default-client`         | -         | Create the default OAuth client on startup (skipped if it already exists)       |
+| `--default-client-id`             | `default` | Client ID for the default client                                                |
+| `--default-client-secret`         | -         | Secret for the default client. Auto-generated and printed if omitted.           |
+| `--default-client-algorithm`      | `HS256`   | JWT signing algorithm for the default client                                    |
+| `--default-client-signing-secret` | -         | Signing key for the default client. Auto-generated and printed if omitted (HS*) |
+| `--default-client-redirect-uris`  | -         | Space-separated redirect URIs for the default client (can be repeated)          |
+| `--default-client-scopes`         | -         | Space-separated scopes for the default client (can be repeated)                 |
+| `--default-client-audiences`      | -         | Space-separated audiences for the default client (can be repeated)              |
+| `--create-default-user`           | -         | Create or update the default user on startup                                    |
+| `--default-username`              | `default` | Username for the default user                                                   |
+| `--default-password`              | -         | Password for the default user. Prompted securely if omitted.                    |
 
 ### clients
 
