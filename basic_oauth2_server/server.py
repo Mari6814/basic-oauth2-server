@@ -1,7 +1,7 @@
 """FastAPI OAuth server implementation."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -17,7 +17,6 @@ from basic_oauth2_server.exceptions import (
 )
 from basic_oauth2_server.jwks import build_jwks
 from .consent_token import (
-    CONSENT_TOKEN_EXPIRES_IN,
     create_consent_token,
     verify_consent_token,
 )
