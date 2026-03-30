@@ -40,6 +40,7 @@ def create_jwt(
     secret: bytes | None = None,
     private_key: bytes | None = None,
     kid: str | None = None,
+    expires_in: int | None = None,
 ) -> str:
     """Create a signed JWT.
 
@@ -49,6 +50,7 @@ def create_jwt(
         secret: The shared secret (for HMAC algorithms).
         private_key: The private key bytes (for asymmetric algorithms).
         kid: Optional key ID to include in the JWT header.
+        expires_in: If set, automatically sets the 'exp' claim to current time + expires_in seconds.
 
     Returns:
         The signed JWT as a string.
@@ -63,6 +65,12 @@ def create_jwt(
     header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
 
     # Create payload
+    if expires_in is not None:
+        claims["exp"] = int(time.time()) + expires_in
+    if "iat" not in claims:
+        claims["iat"] = int(time.time())
+    if "jti" not in claims:
+        claims["jti"] = str(uuid.uuid4())
     payload_b64 = _b64url_encode(json.dumps(claims, separators=(",", ":")).encode())
 
     # Create signing input
