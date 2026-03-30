@@ -5,6 +5,8 @@ from urllib.parse import urlencode
 import base64
 import hashlib
 
+from basic_oauth2_server.consent_token import create_consent_token
+
 from .token_service import create_access_token_for_client
 from .exceptions import (
     InvalidAudienceException,
@@ -17,6 +19,7 @@ from .config import ServerConfig
 from .db import (
     create_authorization_code,
     consume_authorization_code,
+    get_authorization_code,
     get_client,
     touch_client_last_used,
 )
@@ -25,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def handle_authorize(
+    authorized_username: str,
     client_id: str,
     redirect_uri: str,
     code_challenge: str,
@@ -42,6 +46,8 @@ def handle_authorize(
         "requested_scopes",
         "audience",
         "redirect_uri",
+        "consent_token",
+        "user",
     ],
     str | list[str] | None,
 ]:
@@ -57,7 +63,7 @@ def handle_authorize(
         code_challenge_method: The PKCE code challenge method: "S256", "S512", or "plain".
         scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
         audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
-        state: PKCE state parameter
+        state: PKCE state parameter.
         config: The server config, used to access the database and app URL for generating the confirm URL.
 
     Returns:
@@ -88,6 +94,18 @@ def handle_authorize(
         if audience not in allowed_audiences:
             raise InvalidAudienceException(f"Invalid audience: {audience}")
 
+    consent_token = create_consent_token(
+        username=authorized_username,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+        state=state,
+        scope=scope or None,
+        audience=audience,
+        config=config,
+    )
+
     return {
         "type": "consent",
         "message": f"Application '{client.title}' is requesting access.",
@@ -96,6 +114,8 @@ def handle_authorize(
         "requested_scopes": requested_scopes or [],
         "audience": audience,
         "redirect_uri": redirect_uri,
+        "consent_token": consent_token,
+        "user": authorized_username,
     }
 
 

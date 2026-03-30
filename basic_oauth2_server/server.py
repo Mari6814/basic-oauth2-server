@@ -105,6 +105,7 @@ def create_app(config: ServerConfig) -> FastAPI:
             )
 
         consent_data = handle_authorize(
+            authorized_username=user.username,
             client_id=client_id,
             redirect_uri=redirect_uri,
             code_challenge=code_challenge,
@@ -115,25 +116,11 @@ def create_app(config: ServerConfig) -> FastAPI:
             config=config,
         )
 
-        consent_token = create_consent_token(
-            username=user.username,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            code_challenge=code_challenge,
-            code_challenge_method=code_challenge_method,
-            state=state,
-            scope=scope or None,
-            audience=audience,
-            config=config,
-        )
-
         base_url = config.app_url or ""
         return JSONResponse(
             content={
                 **consent_data,
                 "confirm_url": f"{base_url}/authorize/confirm",
-                "consent_token": consent_token,
-                "user": user.username,
             }
         )
 
