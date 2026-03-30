@@ -888,6 +888,102 @@ def test_authorize_requires_auth(client_with_db: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_authorization_code_flow_form_credentials(client_with_db: TestClient) -> None:
+    """Test authorization code flow with client credentials in request body."""
+    verifier, challenge = _pkce_pair()
+
+    # Step 1: Get consent token
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "scope": "read write",
+            "audience": "https://api.test.com",
+            "state": "test-state-form-body",
+        },
+        headers=_basic_auth_header("testuser", "testpass"),
+    )
+    assert response.status_code == 200
+    consent_token = response.json()["consent_token"]
+
+    # Step 2: Confirm consent and get code
+    response = client_with_db.post(
+        "/authorize/confirm",
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers["location"]
+    code = parse_qs(urlparse(location).query)["code"][0]
+
+    # Step 3a: Assert that wrong client credentials in body are rejected
+    invalid_response_1 = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+            "client_id": "test-client",
+            "client_secret": b64("wrong-secret"),
+        },
+    )
+    assert invalid_response_1.status_code == 401
+    assert invalid_response_1.json()["error"] == "invalid_client"
+
+    # Step 3b: Assert that missing client credentials in body are rejected
+    invalid_response_2 = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+        },
+    )
+    assert invalid_response_2.status_code == 401
+    assert invalid_response_2.json()["error"] == "invalid_client"
+
+    # Step 3c: Assert that wrong client_id in body is rejected
+    invalid_response_3 = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+            "client_id": "wrong-client",
+            "client_secret": b64("test-secret"),
+        },
+    )
+    assert invalid_response_3.status_code == 401
+    assert invalid_response_3.json()["error"] == "invalid_client"
+
+    # Step 4: Exchange code for token, client credentials in form body
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+            "client_id": "test-client",
+            "client_secret": b64("test-secret"),
+        },
+    )
+    assert response.status_code == 200
+    token_data = response.json()
+    assert "access_token" in token_data
+    assert token_data["token_type"] == "Bearer"
+    assert token_data["expires_in"] == 3600
+    assert token_data["scope"] == "read write"
+
+
 def test_authorize_invalid_client(client_with_db: TestClient) -> None:
     """Test that /authorize rejects unknown client_id."""
     response = client_with_db.get(
