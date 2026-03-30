@@ -11,6 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import get_user, init_db
 from basic_oauth2_server.exceptions import (
+    InvalidClientException,
     InvalidGrantException,
     InvalidRequestException,
     OAuth2Exception,
@@ -29,10 +30,10 @@ from .authorization_code_grant import (
 
 logger = logging.getLogger(__name__)
 
-# set up Authorization: Basic base64(client_id:client_secret), but ignore errors,
-# because we have to generate oauth2 json responses and it is optional anyway
-client_credentials_security = HTTPBasic(auto_error=False)
-# For /authorize, Basic Auth is required (auto_error returns 401 on missing credentials).
+# auto_error=False so that we can handle the OAuth2 error responses ourselves.
+token_security = HTTPBasic(auto_error=False)
+
+# For /authorize, where the web frontend does not care about OAuth2 responses, so we do let it auto_error
 authorize_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
 
 
@@ -196,22 +197,26 @@ def create_app(config: ServerConfig) -> FastAPI:
         redirect_uri: Annotated[str | None, Form()] = None,
         code_verifier: Annotated[str | None, Form()] = None,
         client_credentials: Annotated[
-            HTTPBasicCredentials | None, Depends(client_credentials_security)
+            HTTPBasicCredentials | None, Depends(token_security)
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
+        effective_client_id = (
+            client_credentials.username if client_credentials else client_id
+        )
+        effective_client_secret = (
+            client_credentials.password if client_credentials else client_secret
+        )
+        if not effective_client_id or not effective_client_secret:
+            raise InvalidClientException(
+                "Client authentication failed: missing credentials"
+            )
         match grant_type:
             case "client_credentials":
                 client_credentials_data = handle_client_credentials(
                     config=config,
-                    client_id=(
-                        client_credentials.username if client_credentials else client_id
-                    ),
-                    client_secret=(
-                        client_credentials.password
-                        if client_credentials
-                        else client_secret
-                    ),
+                    client_id=effective_client_id,
+                    client_secret=effective_client_secret,
                     scope=scope,
                     audience=audience,
                 )
@@ -219,7 +224,8 @@ def create_app(config: ServerConfig) -> FastAPI:
             case "authorization_code":
                 authorization_code_data = handle_authorization_code(
                     config=config,
-                    client_id=client_id,
+                    client_id=effective_client_id,
+                    client_secret=effective_client_secret,
                     code=code,
                     redirect_uri=redirect_uri,
                     code_verifier=code_verifier,

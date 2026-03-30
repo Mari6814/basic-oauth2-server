@@ -63,6 +63,21 @@ def test_token_endpoint_success(client_with_db: TestClient) -> None:
     """Test successful token request."""
     response = client_with_db.post(
         "/oauth2/token",
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "Bearer"
+    assert data["expires_in"] == 3600
+
+
+def test_token_endpoint_success_form_credentials(client_with_db: TestClient) -> None:
+    """Test successful token request via form-body credentials."""
+    response = client_with_db.post(
+        "/oauth2/token",
         data={
             "grant_type": "client_credentials",
             "client_id": "test-client",
@@ -81,12 +96,8 @@ def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
     """Test token request with valid scope."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "test-client",
-            "client_secret": b64("test-secret"),
-            "scope": "read write",
-        },
+        data={"grant_type": "client_credentials", "scope": "read write"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
 
     assert response.status_code == 200
@@ -111,12 +122,8 @@ def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
 
     resp = tc.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "subset-client",
-            "client_secret": b64("subset-secret"),
-            "scope": "read write",
-        },
+        data={"grant_type": "client_credentials", "scope": "read write"},
+        headers=_basic_auth_header("subset-client", b64("subset-secret")),
     )
 
     assert resp.status_code == 200
@@ -128,12 +135,8 @@ def test_token_endpoint_invalid_scope(client_with_db: TestClient) -> None:
     """Test token request with invalid scope."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "test-client",
-            "client_secret": b64("test-secret"),
-            "scope": "admin",
-        },
+        data={"grant_type": "client_credentials", "scope": "admin"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
 
     assert response.status_code == 400
@@ -145,11 +148,8 @@ def test_token_endpoint_invalid_client(client_with_db: TestClient) -> None:
     """Test token request with invalid client."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "nonexistent",
-            "client_secret": b64("wrong"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("nonexistent", b64("wrong")),
     )
 
     assert response.status_code == 401
@@ -161,11 +161,8 @@ def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
     """Test token request with wrong secret."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "test-client",
-            "client_secret": b64("wrong-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("test-client", b64("wrong-secret")),
     )
 
     assert response.status_code == 401
@@ -177,11 +174,8 @@ def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> No
     """Test token request with unsupported grant type."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "password",
-            "client_id": "test-client",
-            "client_secret": b64("test-secret"),
-        },
+        data={"grant_type": "password"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
 
     assert response.status_code == 400
@@ -193,12 +187,8 @@ def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
     """Test token request with valid audience."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "test-client",
-            "client_secret": b64("test-secret"),
-            "audience": "https://api.test.com",
-        },
+        data={"grant_type": "client_credentials", "audience": "https://api.test.com"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
 
     assert response.status_code == 200
@@ -221,12 +211,8 @@ def test_request_one_of_allowed_audiences(temp_db: str) -> None:
 
     resp = tc.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "audience-client",
-            "client_secret": b64("audience-secret"),
-            "audience": "https://api.b.example",
-        },
+        data={"grant_type": "client_credentials", "audience": "https://api.b.example"},
+        headers=_basic_auth_header("audience-client", b64("audience-secret")),
     )
 
     assert resp.status_code == 200
@@ -243,12 +229,8 @@ def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
     """Test token request with invalid audience."""
     response = client_with_db.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "test-client",
-            "client_secret": b64("test-secret"),
-            "audience": "https://wrong.com",
-        },
+        data={"grant_type": "client_credentials", "audience": "https://wrong.com"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
 
     assert response.status_code == 400
@@ -364,11 +346,8 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
     """Test token generation with RS256."""
     response = client_with_rsa.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "rsa-client",
-            "client_secret": b64("rsa-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("rsa-client", b64("rsa-secret")),
     )
 
     assert response.status_code == 200
@@ -405,11 +384,8 @@ def test_token_ps256_algorithm(client_with_ps256: TestClient) -> None:
     """Test token generation with PS256 (RSA-PSS)."""
     response = client_with_ps256.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "ps256-client",
-            "client_secret": b64("ps256-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("ps256-client", b64("ps256-secret")),
     )
 
     assert response.status_code == 200
@@ -426,11 +402,8 @@ def test_token_es256_algorithm(client_with_es256: TestClient) -> None:
     """Test token generation with ES256."""
     response = client_with_es256.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "es256-client",
-            "client_secret": b64("es256-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("es256-client", b64("es256-secret")),
     )
 
     assert response.status_code == 200
@@ -447,11 +420,8 @@ def test_token_es384_algorithm(client_with_es384: TestClient) -> None:
     """Test token generation with ES384."""
     response = client_with_es384.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "es384-client",
-            "client_secret": b64("es384-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("es384-client", b64("es384-secret")),
     )
 
     assert response.status_code == 200
@@ -468,11 +438,8 @@ def test_token_es512_algorithm(client_with_es512: TestClient) -> None:
     """Test token generation with ES512."""
     response = client_with_es512.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "es512-client",
-            "client_secret": b64("es512-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("es512-client", b64("es512-secret")),
     )
 
     assert response.status_code == 200
@@ -489,11 +456,8 @@ def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
     """Test token generation with EdDSA."""
     response = client_with_eddsa.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "eddsa-client",
-            "client_secret": b64("eddsa-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("eddsa-client", b64("eddsa-secret")),
     )
 
     assert response.status_code == 200
@@ -531,11 +495,8 @@ def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
     """Test that token includes kid in header when key ID is configured."""
     response = client_with_key_id.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "kid-client",
-            "client_secret": b64("kid-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("kid-client", b64("kid-secret")),
     )
 
     assert response.status_code == 200
@@ -574,11 +535,8 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     """Test that token includes iss claim when APP_URL is configured."""
     response = client_with_issuer.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "issuer-client",
-            "client_secret": b64("issuer-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("issuer-client", b64("issuer-secret")),
     )
 
     assert response.status_code == 200
@@ -643,7 +601,7 @@ def test_token_endpoint_basic_auth_unknown_client(client_with_db: TestClient) ->
 
 
 def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
-    """Test that Basic auth takes priority over form credentials."""
+    """Test that Basic Auth credentials take priority over form-body credentials."""
 
     credentials = base64.b64encode(
         f"test-client:{b64('test-secret')}".encode()
@@ -658,7 +616,6 @@ def test_token_endpoint_basic_auth_priority(client_with_db: TestClient) -> None:
         headers={"Authorization": f"Basic {credentials}"},
     )
 
-    # Should succeed because header takes priority
     assert response.status_code == 200
 
 
@@ -669,8 +626,8 @@ def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
         data={"grant_type": "client_credentials"},
     )
 
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_request"
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_client"
 
 
 def _pkce_pair() -> tuple[str, str]:
@@ -776,11 +733,11 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": verifier,
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 200
     token_data = response.json()
@@ -824,11 +781,11 @@ def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": verifier,
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 200
 
@@ -836,11 +793,11 @@ def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": verifier,
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_grant"
@@ -869,11 +826,11 @@ def test_authorization_code_wrong_verifier(client_with_db: TestClient) -> None:
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": "wrong-verifier-value",
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_grant"
@@ -885,10 +842,10 @@ def test_authorization_code_missing_verifier(client_with_db: TestClient) -> None
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": "some-code",
             "redirect_uri": "http://localhost/callback",
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_request"
@@ -1002,11 +959,11 @@ def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": verifier,
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 200
     assert "access_token" in response.json()
@@ -1038,11 +995,11 @@ def test_authorization_code_flow_s512_wrong_verifier(
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
-            "client_id": "test-client",
             "code": code,
             "redirect_uri": "http://localhost/callback",
             "code_verifier": "wrong-verifier",
         },
+        headers=_basic_auth_header("test-client", b64("test-secret")),
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_grant"
@@ -1144,11 +1101,8 @@ def test_token_expires_in_configurable(temp_db: str) -> None:
 
     response = tc.post(
         "/oauth2/token",
-        data={
-            "grant_type": "client_credentials",
-            "client_id": "expiry-client",
-            "client_secret": b64("expiry-secret"),
-        },
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("expiry-client", b64("expiry-secret")),
     )
     assert response.status_code == 200
     assert response.json()["expires_in"] == 7200
@@ -1292,6 +1246,93 @@ class TestAuthorizeConfirmUserMismatch:
             "/authorize/confirm",
             data={"token": consent_token},
             headers=_basic_auth_header("alice", "alicepass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+    def test_authorize_confirm_user_mismatch_different_clients(
+        self, temp_db: str
+    ) -> None:
+        """Test that user mismatch is detected across different clients."""
+        create_client(
+            db_path=temp_db,
+            client_id="client-a",
+            client_secret=b"secret-a",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"signing-secret-a-12345",
+            scopes=["read"],
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_client(
+            db_path=temp_db,
+            client_id="client-b",
+            client_secret=b"secret-b",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"signing-secret-b-12345",
+            scopes=["read"],
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_user(temp_db, "alice", "alicepass")
+        create_user(temp_db, "bob", "bobpass")
+
+        config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+        app = create_app(config)
+        tc = TestClient(app)
+
+        verifier_a, challenge_a = _pkce_pair()
+        consent_token_a = _get_consent_token(
+            tc,
+            client_id="client-a",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge_a,
+            state="mismatch-state-a",
+            username="alice",
+            password="alicepass",
+        )
+
+        verifier_b, challenge_b = _pkce_pair()
+        consent_token_b = _get_consent_token(
+            tc,
+            client_id="client-b",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge_b,
+            state="mismatch-state-b",
+            username="bob",
+            password="bobpass",
+        )
+
+        # Bob can not confirm Alice's token for client A
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token_a},
+            headers=_basic_auth_header("bob", "bobpass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+        # Alice can confirm her own token for client A
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token_a},
+            headers=_basic_auth_header("alice", "alicepass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 302
+
+        # Alice can not confirm Bob's token for client B
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token_b},
+            headers=_basic_auth_header("alice", "alicepass"),
+            follow_redirects=False,
+        )
+        assert response.status_code == 403
+
+        # Bob can confirm his own token for client B
+        response = tc.post(
+            "/authorize/confirm",
+            data={"token": consent_token_b},
+            headers=_basic_auth_header("bob", "bobpass"),
             follow_redirects=False,
         )
         assert response.status_code == 302

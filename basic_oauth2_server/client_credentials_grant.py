@@ -1,14 +1,12 @@
 """Handle the client_credentials grant type."""
 
 import logging
-import base64
 from typing import Literal
 
 from .config import ServerConfig
 from .exceptions import (
     InvalidAudienceException,
     InvalidClientException,
-    InvalidRequestException,
     InvalidScopeException,
     OAuthServerErrorException,
 )
@@ -20,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 def handle_client_credentials(
     config: ServerConfig,
-    client_id: str | None,
-    client_secret: str | None,
+    client_id: str,
+    client_secret: str,
     scope: str | None,
     audience: str | None,
 ) -> dict[Literal["access_token", "token_type", "expires_in", "scope"], str | int]:
@@ -46,22 +44,16 @@ def handle_client_credentials(
         InvalidAudienceException: If the client requests an audience that is not allowed for it.
         OAuthServerErrorException: If there is an unexpected error during token creation.
     """
-    if not client_id or not client_secret:
-        raise InvalidRequestException(
-            "Client authentication failed: missing credentials",
-        )
-    try:
-        effective_client_secret_bytes = base64.b64decode(client_secret, validate=True)
-    except Exception:
-        raise InvalidRequestException(
-            "Client authentication failed: invalid base64 encoding in secret",
+    if not client_id:
+        raise InvalidClientException(
+            "Client authentication failed: missing credentials"
         )
 
     client = get_client(config.db_path, client_id=client_id)
     if not client:
         raise InvalidClientException("Client authentication failed")
 
-    if not client.verify_client_secret(effective_client_secret_bytes):
+    if not client.verify_client_secret(client_secret):
         raise InvalidClientException("Client authentication failed")
 
     requested_scopes: list[str] = []

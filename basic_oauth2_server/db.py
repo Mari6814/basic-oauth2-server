@@ -1,12 +1,22 @@
 """Database models and operations using SQLAlchemy."""
 
+import base64
 import bcrypt
 from functools import lru_cache
 import hashlib
 from datetime import datetime, timedelta, timezone
 import secrets
 
-from sqlalchemy import Boolean, DateTime, String, Text, create_engine, Index, event
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    String,
+    Text,
+    create_engine,
+    Index,
+    event,
+    update,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from basic_oauth2_server.config import get_app_key
@@ -60,10 +70,25 @@ class Client(TimestampMixin, Base):
     # Comma-separated list of authorized redirect URIs for authorization code flow
     redirect_uris: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    def verify_client_secret(self, user_secret: bytes) -> bool:
-        """Verify that the provided secret matches the stored hash."""
+    def verify_client_secret(self, user_secret: str | bytes) -> bool:
+        """Verify that the provided secret matches the stored hash.
+
+        Compares the provided user input with the stored hash of the client
+        secret and returns True if they match, False otherwise.
+
+        Args:
+            user_secret: The client secret provided by the user, either as a base64-encoded string or bytes.
+
+        Returns:
+            bool: True if the provided secret is correct, False otherwise.
+        """
         if not self.client_secret:
             return False
+        if isinstance(user_secret, str):
+            try:
+                user_secret = base64.b64decode(user_secret, validate=True)
+            except Exception:
+                return False
         if secrets.compare_digest(
             self.client_secret, hashlib.sha256(user_secret).hexdigest()
         ):
@@ -190,28 +215,30 @@ def create_authorization_code(
     return code
 
 
+def consume_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
+    """In one atomic action, retrieve an authorization code and mark it as used. Returns the code if valid and unused, or None if invalid, expired, or already used."""
+    now = datetime.now(timezone.utc)
+    with get_session(db_path) as session:
+        returned_code = session.execute(
+            update(AuthorizationCode)
+            .where(
+                AuthorizationCode.code == code,
+                AuthorizationCode.used == False,  # noqa: E712
+                AuthorizationCode.expires_at > now,
+            )
+            .values(used=True)
+            .returning(AuthorizationCode.code)
+        ).scalar()
+        if returned_code is None:
+            return None
+        session.commit()
+        return session.get(AuthorizationCode, returned_code)
+
+
 def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
-    """Retrieve a non-expired, unused authorization code record."""
+    """Retrieve an authorization code record by code."""
     with get_session(db_path) as session:
-        auth_code = session.get(AuthorizationCode, code)
-        if auth_code is None:
-            return None
-        if auth_code.used:
-            return None
-        if auth_code.expires_at.replace(tzinfo=timezone.utc) < datetime.now(
-            timezone.utc
-        ):
-            return None
-        return auth_code
-
-
-def mark_authorization_code_used(db_path: str, code: str) -> None:
-    """Mark an authorization code as used so it cannot be reused."""
-    with get_session(db_path) as session:
-        auth_code = session.get(AuthorizationCode, code)
-        if auth_code:
-            auth_code.used = True
-            session.commit()
+        return session.get(AuthorizationCode, code)
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):
@@ -235,7 +262,6 @@ def get_engine(db_path: str):
     """Create and cache a SQLAlchemy engine for the given database path and apply SQLite pragmas."""
     engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
-    # Apply connection-level pragmas for SQLite to improve safety and performance.
     if engine.dialect.name == "sqlite":
         event.listens_for(engine, "connect")(_set_sqlite_pragma)
 

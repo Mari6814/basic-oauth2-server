@@ -99,7 +99,7 @@ def test_success_with_audience(config: ServerConfig) -> None:
 
 
 def test_missing_credentials_raises(config: ServerConfig) -> None:
-    with pytest.raises(InvalidRequestException):
+    with pytest.raises(InvalidClientException):
         handle_client_credentials(
             config=config,
             client_id=None,
@@ -110,7 +110,7 @@ def test_missing_credentials_raises(config: ServerConfig) -> None:
 
 
 def test_invalid_base64_secret_raises(config: ServerConfig) -> None:
-    with pytest.raises(InvalidRequestException):
+    with pytest.raises(InvalidClientException):
         handle_client_credentials(
             config=config,
             client_id="test-client",

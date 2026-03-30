@@ -2,8 +2,8 @@ import logging
 from typing import Literal
 from urllib.parse import urlencode
 
-import hashlib
 import base64
+import hashlib
 
 from .token_service import create_access_token_for_client
 from .exceptions import (
@@ -16,8 +16,7 @@ from .exceptions import (
 from .config import ServerConfig
 from .db import (
     create_authorization_code,
-    get_authorization_code,
-    mark_authorization_code_used,
+    consume_authorization_code,
     get_client,
     touch_client_last_used,
 )
@@ -143,7 +142,8 @@ def handle_authorize_confirm(
 
 def handle_authorization_code(
     config: ServerConfig,
-    client_id: str | None,
+    client_id: str,
+    client_secret: str,
     code: str | None,
     redirect_uri: str | None,
     code_verifier: str | None,
@@ -151,12 +151,8 @@ def handle_authorization_code(
     """Handle the authorization_code grant type with PKCE validation."""
     if not code:
         raise InvalidRequestException("Missing authorization code")
-    if not client_id:
-        raise InvalidRequestException("Missing client_id")
-    if not code_verifier:
-        raise InvalidRequestException("Missing code_verifier (PKCE required)")
 
-    auth_code = get_authorization_code(config.db_path, code)
+    auth_code = consume_authorization_code(config.db_path, code)
     if not auth_code:
         raise InvalidGrantException("Invalid or expired authorization code")
 
@@ -166,16 +162,21 @@ def handle_authorization_code(
     if auth_code.redirect_uri and auth_code.redirect_uri != redirect_uri:
         raise InvalidGrantException("Redirect URI mismatch")
 
-    if not auth_code.code_challenge or not _verify_pkce(
-        code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
+    if (
+        not code_verifier
+        or not auth_code.code_challenge
+        or not _verify_pkce(
+            code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
+        )
     ):
         raise InvalidGrantException("PKCE code_verifier validation failed")
-
-    mark_authorization_code_used(config.db_path, code)
 
     client = get_client(config.db_path, client_id)
     if not client:
         raise InvalidClientException("Client not found")
+
+    if not client.verify_client_secret(client_secret):
+        raise InvalidClientException("Client authentication failed")
 
     scopes = auth_code.scope.split() if auth_code.scope else None
 
