@@ -19,7 +19,6 @@ from .config import ServerConfig
 from .db import (
     create_authorization_code,
     consume_authorization_code,
-    get_authorization_code,
     get_client,
     touch_client_last_used,
 )

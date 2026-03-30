@@ -18,7 +18,6 @@ from basic_oauth2_server.exceptions import (
 )
 from basic_oauth2_server.jwks import build_jwks
 from .consent_token import (
-    create_consent_token,
     verify_consent_token,
 )
 from .client_credentials_grant import handle_client_credentials
