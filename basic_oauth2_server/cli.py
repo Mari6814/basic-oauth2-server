@@ -158,6 +158,12 @@ def main(args: list[str] | None = None) -> int:
         action="append",
         help="Audiences for the default client (space-separated; can be repeated)",
     )
+    serve_parser.add_argument(
+        "--default-client-redirect-uris",
+        dest="default_client_redirect_uris",
+        action="append",
+        help="Allowed redirect URIs for the default client (can be repeated)",
+    )
 
     # Default user bootstrapping
     serve_parser.add_argument(
@@ -371,6 +377,10 @@ def _ensure_default_client(args: argparse.Namespace) -> None:
             a for entry in args.default_client_audiences for a in entry.split()
         ]
 
+    redirect_uris: list[str] | None = None
+    if args.default_client_redirect_uris is not None:
+        redirect_uris = list(args.default_client_redirect_uris)
+
     create_client(
         db_path=args.db,
         client_id=client_id,
@@ -379,6 +389,7 @@ def _ensure_default_client(args: argparse.Namespace) -> None:
         signing_secret=signing_secret_raw,
         scopes=scopes,
         audiences=audiences,
+        redirect_uris=redirect_uris,
     )
 
     print(f"Created default client '{client_id}'")

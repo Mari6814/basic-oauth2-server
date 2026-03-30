@@ -35,6 +35,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 c.title or "",
                 c.algorithm,
                 c.scopes or "",
+                c.redirect_uris or "",
                 (
                     c.last_used_at.strftime("%Y-%m-%d %H:%M")
                     if c.last_used_at
@@ -52,6 +53,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         signing_secret: str,
         scopes: str,
         audiences: str,
+        redirect_uris: str,
     ) -> tuple[str, list[list[str]]]:
         """Add a new client."""
 
@@ -85,6 +87,9 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             audiences_list = [
                 a.strip() for a in audiences.split(",") if a.strip()
             ] or None
+            redirect_uris_list = [
+                r.strip() for r in redirect_uris.splitlines() if r.strip()
+            ] or None
 
             _client = create_client(
                 db_path=config.db_path,
@@ -94,6 +99,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                 signing_secret=signing_secret_bytes,
                 scopes=scopes_list,
                 audiences=audiences_list,
+                redirect_uris=redirect_uris_list,
                 title=title or None,
             )
 
@@ -206,6 +212,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                     "Title",
                     "Algorithm",
                     "Scopes",
+                    "Redirect URIs",
                     "Last used",
                 ],
                 value=refresh_clients(),
@@ -261,6 +268,12 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                         label="Allowed Audiences",
                         placeholder="https://api.example.com",
                     )
+                    new_redirect_uris = gr.Textbox(
+                        label="Allowed Redirect URIs",
+                        placeholder="https://app.example.com/callback\nhttps://app.example.com/auth",
+                        lines=3,
+                        info="One URI per line. Required for authorization code flow.",
+                    )
 
             add_status = gr.Textbox(label="Status", interactive=False)
             add_btn = gr.Button("Create Client", variant="primary")
@@ -274,6 +287,7 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
                     new_signing_secret,
                     new_scopes,
                     new_audiences,
+                    new_redirect_uris,
                 ],
                 outputs=[add_status, clients_table],
             )
