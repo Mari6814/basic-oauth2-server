@@ -756,6 +756,8 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     assert payload["sub"] == "testuser"
     assert payload["aud"] == "https://api.test.com"
     assert set(payload["scope"].split()) == {"read", "write"}
+    assert payload["azp"] == "test-client"
+    assert payload["client_id"] == "test-client"
 
 
 def test_authorization_code_reuse_rejected(client_with_db: TestClient) -> None:

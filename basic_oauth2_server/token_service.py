@@ -47,6 +47,7 @@ def create_access_token_for_client(
             audience=audience,
             expires_in=config.token_expires_in,
             issuer=config.app_url,
+            client_id=client.client_id,
         )
     else:
         private_key, kid = config.load_private_key(algorithm)
@@ -59,6 +60,7 @@ def create_access_token_for_client(
             expires_in=config.token_expires_in,
             kid=kid,
             issuer=config.app_url,
+            client_id=client.client_id,
         )
 
 

@@ -130,9 +130,10 @@ def create_access_token(
         claims["aud"] = audience
 
     if client_id:
-        # apparently, this is a keycloak convention for "authorized party" claim to indicate the client_id in user access tokens
-        # have not confirmed and don't really care lol
+        # Keycloak convention for "authorized party" claim, dunno...
         claims["azp"] = client_id
+        # Also include client_id explicitly for introspection and clarity
+        claims["client_id"] = client_id
 
     return create_jwt(
         claims, algorithm, secret=secret, private_key=private_key, kid=kid
