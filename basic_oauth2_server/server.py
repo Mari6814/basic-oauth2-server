@@ -226,8 +226,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 def _render_oauth_error(
     error: str, description: str, status_code: int = 400
 ) -> JSONResponse:
-    """Return a JSON response according to what OAuth2 excepts."""
-    logger.warning("OAuth error: %s (%s) - %s", error, status_code, description)
+    """Return a JSON response according to what OAuth2 expects."""
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "error_description": description},
