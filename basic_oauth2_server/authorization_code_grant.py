@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -17,6 +18,7 @@ from .exceptions import (
 )
 from .config import ServerConfig
 from .db import (
+    consume_consent_jti,
     create_authorization_code,
     consume_authorization_code,
     get_client,
@@ -128,6 +130,8 @@ def handle_authorize_confirm(
     state: str,
     username: str,
     config: ServerConfig,
+    consent_jti: str,
+    consent_exp: int,
 ) -> str:
     """Create an authorization code and redirect to the client with the code.
 
@@ -143,6 +147,12 @@ def handle_authorize_confirm(
     allowed_uris = client.get_redirect_uris_list()
     if not allowed_uris or redirect_uri not in allowed_uris:
         raise InvalidRequestException("redirect_uri not registered for this client")
+
+    # Consume the JTI only after all other validations have passed to prevent
+    # an attacker from exhausting a legitimate token via failed validations.
+    expires_at = datetime.fromtimestamp(consent_exp, tz=timezone.utc)
+    if not consume_consent_jti(config.db_path, consent_jti, expires_at):
+        raise InvalidRequestException("Consent token has already been used")
 
     code = create_authorization_code(
         db_path=config.db_path,

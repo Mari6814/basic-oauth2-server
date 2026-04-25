@@ -1,7 +1,6 @@
 """FastAPI OAuth server implementation."""
 
 import logging
-from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
@@ -10,7 +9,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import consume_consent_jti, get_user, init_db
+from basic_oauth2_server.db import get_user, init_db
 from basic_oauth2_server.exceptions import (
     InvalidClientException,
     InvalidGrantException,
@@ -163,10 +162,6 @@ def create_app(config: ServerConfig) -> FastAPI:
                 detail="Forbidden: token user does not match authenticated user",
             )
 
-        expires_at = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
-        if not consume_consent_jti(config.db_path, claims.jti, expires_at):
-            raise InvalidRequestException("Consent token has already been used")
-
         redirect_url = handle_authorize_confirm(
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -177,6 +172,8 @@ def create_app(config: ServerConfig) -> FastAPI:
             state=state,
             username=username,
             config=config,
+            consent_jti=claims.jti,
+            consent_exp=claims.exp,
         )
         return RedirectResponse(url=redirect_url, status_code=302)
 
