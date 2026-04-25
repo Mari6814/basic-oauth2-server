@@ -1459,3 +1459,42 @@ class TestAuthorizeConfirmUserMismatch:
             follow_redirects=False,
         )
         assert response.status_code == 302
+
+
+def test_authorize_unsupported_response_type(client_with_db: TestClient) -> None:
+    """GET /authorize with response_type other than 'code' returns 400."""
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "token",
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": "abc123",
+            "state": "xyz",
+        },
+        headers=_basic_auth_header("testuser", "testpass"),
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
+def test_generic_exception_handler(
+    temp_db: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unexpected exception in a route handler returns a 500 server_error response."""
+    import basic_oauth2_server.server as _server
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError("simulated internal failure")
+
+    monkeypatch.setattr(_server, "handle_client_credentials", _raise)
+    config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+    app = create_app(config)
+    tc = TestClient(app, raise_server_exceptions=False)
+    response = tc.post(
+        "/oauth2/token",
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
+    )
+    assert response.status_code == 500
+    assert response.json()["error"] == "server_error"

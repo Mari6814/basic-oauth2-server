@@ -173,3 +173,28 @@ def test_invalid_audience_raises(config: ServerConfig) -> None:
             scope=None,
             audience="https://evil.example.com",
         )
+
+
+def test_unexpected_exception_raises_server_error(
+    config: ServerConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unexpected error during token creation raises OAuthServerErrorException."""
+    from basic_oauth2_server import client_credentials_grant
+    from basic_oauth2_server.exceptions import OAuthServerErrorException
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("disk exploded")
+
+    monkeypatch.setattr(
+        client_credentials_grant, "create_access_token_for_client", _boom
+    )
+    with pytest.raises(
+        OAuthServerErrorException, match="Failed to create access token"
+    ):
+        handle_client_credentials(
+            config=config,
+            client_id="test-client",
+            client_secret=b64("test-secret"),
+            scope=None,
+            audience=None,
+        )

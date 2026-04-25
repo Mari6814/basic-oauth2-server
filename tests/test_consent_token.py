@@ -15,11 +15,7 @@ from basic_oauth2_server.consent_token import (
     verify_consent_token,
 )
 from basic_oauth2_server.exceptions import InvalidRequestException
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from jws_algorithms import SymmetricAlgorithm
 
 
 def _b64url_decode(data: str) -> bytes:
@@ -31,11 +27,6 @@ def _b64url_decode(data: str) -> bytes:
 
 def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -269,3 +260,96 @@ class TestVerifyRejectsMalformed:
     def test_truncated_token(self, valid_token: str, config: ServerConfig) -> None:
         with pytest.raises(InvalidRequestException):
             verify_consent_token(valid_token[:-10], config=config)
+
+
+def _make_signed_token(claims: dict, app_key: bytes) -> str:
+    """Create a properly signed HS512 JWT with custom claims (for testing edge cases)."""
+
+    _alg = SymmetricAlgorithm.HS512
+    header_b64 = _b64url_encode(b'{"alg":"HS512","typ":"JWT"}')
+
+    payload_b64 = _b64url_encode(json.dumps(claims, separators=(",", ":")).encode())
+    sig = _alg.sign(app_key, f"{header_b64}.{payload_b64}".encode())
+    return f"{header_b64}.{payload_b64}.{_b64url_encode(sig)}"
+
+
+class TestVerifyRejectsInvalidClaims:
+    """Test that verify_consent_token rejects tokens with bad iss/aud/iat claims."""
+
+    @pytest.fixture
+    def app_key_bytes(self) -> bytes:
+        return base64.b64decode(base64.b64encode(b"test-consent-key-32bytes!!!!!!!!"))
+
+    def test_wrong_issuer(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+        now = int(time.time())
+        claims = {
+            "sub": "alice",
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": "https://wrong-issuer.example.com",
+            "aud": config.app_url,
+            "iat": now,
+            "exp": now + 300,
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        with pytest.raises(InvalidRequestException, match="issuer"):
+            verify_consent_token(token, config=config)
+
+    def test_wrong_audience(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+        now = int(time.time())
+        claims = {
+            "sub": "alice",
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": config.app_url,
+            "aud": "https://wrong-audience.example.com",
+            "iat": now,
+            "exp": now + 300,
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        with pytest.raises(InvalidRequestException, match="audience"):
+            verify_consent_token(token, config=config)
+
+    def test_future_iat(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+        now = int(time.time())
+        claims = {
+            "sub": "alice",
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": config.app_url,
+            "aud": config.app_url,
+            "iat": now + 9999,
+            "exp": now + 300,
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        with pytest.raises(InvalidRequestException, match="future"):
+            verify_consent_token(token, config=config)
+
+    def test_missing_required_claim(
+        self, config: ServerConfig, app_key_bytes: bytes
+    ) -> None:
+        now = int(time.time())
+        # Missing "sub"
+        claims = {
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": config.app_url,
+            "aud": config.app_url,
+            "iat": now,
+            "exp": now + 300,
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        with pytest.raises(InvalidRequestException, match="missing claim"):
+            verify_consent_token(token, config=config)

@@ -101,3 +101,16 @@ def test_decode_hex_prefix_invalid() -> None:
     """Test that invalid hex with hex: prefix raises an error."""
     with pytest.raises(ValueError, match="Invalid hex encoding"):
         decode_prefixed_utf8("hex:notvalidhex")
+
+
+def test_decode_empty_base64url() -> None:
+    """Test that empty base64url value raises an error."""
+    with pytest.raises(ValueError, match="Invalid base64url encoding"):
+        decode_prefixed_utf8("base64url:")
+
+
+def test_decode_invalid_base64url() -> None:
+    """Test that non-base64url characters raise an error."""
+    with pytest.raises(ValueError, match="Invalid base64url encoding"):
+        # "abc!" is 4 chars, so no padding is added, but "!" causes Incorrect padding
+        decode_prefixed_utf8("base64url:abc!")

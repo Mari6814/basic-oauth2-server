@@ -234,7 +234,7 @@ def _render_oauth_error(
     )
 
 
-def run_server(config: ServerConfig) -> None:
+def run_server(config: ServerConfig) -> None:  # pragma: no cover
     """Run the OAuth server with the given configuration."""
     import uvicorn
 

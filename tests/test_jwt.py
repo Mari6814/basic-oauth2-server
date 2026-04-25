@@ -95,3 +95,20 @@ def test_create_access_token() -> None:
     assert "iat" in payload
     assert "exp" in payload
     assert payload["exp"] - payload["iat"] == 3600
+
+
+def test_create_jwt_with_expires_in() -> None:
+    """Test that create_jwt sets exp when expires_in is provided."""
+    import time
+
+    before = int(time.time())
+    token = create_jwt(
+        {"sub": "test"},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        expires_in=600,
+    )
+    parts = token.split(".")
+    payload = json.loads(_b64url_decode(parts[1]))
+    assert "exp" in payload
+    assert payload["exp"] >= before + 600

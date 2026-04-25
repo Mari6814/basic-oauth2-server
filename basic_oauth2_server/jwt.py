@@ -20,7 +20,7 @@ def get_algorithm(alg: str) -> Algorithm:
     """Convert an algorithm name string to a SymmetricAlgorithm or AsymmetricAlgorithm."""
     if alg.startswith("HS"):
         return SymmetricAlgorithm[alg]
-    if alg in SymmetricAlgorithm.__members__:
+    if alg in SymmetricAlgorithm.__members__:  # pragma: no cover
         return SymmetricAlgorithm[alg]
     if alg in AsymmetricAlgorithm:
         return AsymmetricAlgorithm(alg)

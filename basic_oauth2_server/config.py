@@ -67,7 +67,7 @@ class ServerConfig:
             case AsymmetricAlgorithm.EdDSA:
                 key_str = self.eddsa_private_key
                 key_id = self.eddsa_key_id
-            case _:
+            case _:  # pragma: no cover
                 raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         if not key_str:

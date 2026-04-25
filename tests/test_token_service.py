@@ -10,7 +10,11 @@ from jws_algorithms import SymmetricAlgorithm, AsymmetricAlgorithm
 
 from basic_oauth2_server.db import create_client, get_client
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.token_service import create_access_token_for_client
+from basic_oauth2_server.exceptions import OAuthServerErrorException
+from basic_oauth2_server.token_service import (
+    create_access_token_for_client,
+    create_client_refresh_token,
+)
 
 KEYS_DIR = Path(__file__).parent / "keys"
 
@@ -114,3 +118,17 @@ def test_access_token_missing_key(tmp_path: Path) -> None:
     config = ServerConfig()  # no rsa_private_key
     with pytest.raises(ValueError, match="No private key configured"):
         create_access_token_for_client(config, client)
+
+
+def test_create_client_refresh_token_returns_none() -> None:
+    """create_client_refresh_token is a stub that returns None."""
+    result = create_client_refresh_token(ServerConfig())
+    assert result is None
+
+
+def test_oauth_server_error_exception_stores_description() -> None:
+    """OAuthServerErrorException captures the description and error code."""
+    exc = OAuthServerErrorException("Something went wrong")
+    assert exc.error == "server_error"
+    assert exc.description == "Something went wrong"
+    assert exc.status_code == 500

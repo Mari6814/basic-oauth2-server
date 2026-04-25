@@ -1,11 +1,18 @@
 """Tests for configuration management."""
 
+import os
 from pathlib import Path
 
 import pytest
 from jws_algorithms import AsymmetricAlgorithm
+from pytest import MonkeyPatch
 
-from basic_oauth2_server.config import ServerConfig
+from basic_oauth2_server.config import (
+    AdminConfig,
+    ServerConfig,
+    ensure_app_key,
+    get_app_key,
+)
 
 
 class TestLoadPrivateKey:
@@ -133,3 +140,104 @@ class TestLoadPrivateKey:
         key, kid = config.load_private_key(AsymmetricAlgorithm.EdDSA)
         assert key == b"eddsa-key"
         assert kid == "eddsa-kid"
+
+
+class TestServerConfigFromEnv:
+    def test_defaults_when_no_env_vars(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env returns defaults when no relevant env vars are set."""
+        for var in (
+            "OAUTH_HOST",
+            "OAUTH_PORT",
+            "OAUTH_DB_PATH",
+            "APP_URL",
+            "OAUTH_RSA_PRIVATE_KEY",
+            "OAUTH_EC_P256_PRIVATE_KEY",
+            "OAUTH_EC_P384_PRIVATE_KEY",
+            "OAUTH_EC_P521_PRIVATE_KEY",
+            "OAUTH_EDDSA_PRIVATE_KEY",
+            "OAUTH_RSA_KEY_ID",
+            "OAUTH_EC_P256_KEY_ID",
+            "OAUTH_EC_P384_KEY_ID",
+            "OAUTH_EC_P521_KEY_ID",
+            "OAUTH_EDDSA_KEY_ID",
+            "OAUTH_TOKEN_EXPIRES_IN",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        config = ServerConfig.from_env()
+        assert config.host == "localhost"
+        assert config.port == 8080
+        assert config.db_path == "./oauth.db"
+        assert config.app_url is None
+        assert config.token_expires_in == 3600
+
+    def test_reads_env_vars(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env picks up configured environment variables."""
+        monkeypatch.setenv("OAUTH_HOST", "0.0.0.0")
+        monkeypatch.setenv("OAUTH_PORT", "9000")
+        monkeypatch.setenv("OAUTH_DB_PATH", "/tmp/mydb.db")
+        monkeypatch.setenv("APP_URL", "https://auth.example.com")
+        monkeypatch.setenv("OAUTH_RSA_PRIVATE_KEY", "my-rsa-key")
+        monkeypatch.setenv("OAUTH_TOKEN_EXPIRES_IN", "7200")
+        config = ServerConfig.from_env()
+        assert config.host == "0.0.0.0"
+        assert config.port == 9000
+        assert config.db_path == "/tmp/mydb.db"
+        assert config.app_url == "https://auth.example.com"
+        assert config.rsa_private_key == "my-rsa-key"
+        assert config.token_expires_in == 7200
+
+
+class TestAdminConfigFromEnv:
+    def test_defaults_when_no_env_vars(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env returns defaults when no relevant env vars are set."""
+        for var in ("APP_URL", "OAUTH_ADMIN_HOST", "OAUTH_ADMIN_PORT", "OAUTH_DB_PATH"):
+            monkeypatch.delenv(var, raising=False)
+        config = AdminConfig.from_env()
+        assert config.host == "localhost"
+        assert config.port == 8081
+        assert config.db_path == "./oauth.db"
+        assert config.app_url is None
+
+    def test_reads_env_vars(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env picks up configured environment variables."""
+        monkeypatch.setenv("APP_URL", "https://app.example.com")
+        monkeypatch.setenv("OAUTH_ADMIN_HOST", "0.0.0.0")
+        monkeypatch.setenv("OAUTH_ADMIN_PORT", "9090")
+        monkeypatch.setenv("OAUTH_DB_PATH", "/data/admin.db")
+        config = AdminConfig.from_env()
+        assert config.app_url == "https://app.example.com"
+        assert config.host == "0.0.0.0"
+        assert config.port == 9090
+        assert config.db_path == "/data/admin.db"
+
+
+class TestEnsureAppKey:
+    def test_does_nothing_when_app_key_already_set(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_KEY", "existing-key")
+        ensure_app_key()
+        assert os.environ["APP_KEY"] == "existing-key"
+
+    def test_generates_and_prints_key_when_absent(
+        self, monkeypatch: MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        monkeypatch.delenv("APP_KEY", raising=False)
+        ensure_app_key()
+        key = os.environ.get("APP_KEY")
+        assert key is not None
+        captured = capsys.readouterr()
+        assert f"APP_KEY={key}" in captured.out
+        assert "WARNING" in captured.err
+
+
+class TestGetAppKey:
+    def test_raises_when_not_set(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_KEY", raising=False)
+        with pytest.raises(ValueError, match="APP_KEY"):
+            get_app_key()
+
+    def test_returns_non_base64_value_as_utf8(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_KEY", "not!!!base64")
+        key = get_app_key()
+        assert key == b"not!!!base64"

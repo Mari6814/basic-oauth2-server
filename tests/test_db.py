@@ -320,3 +320,67 @@ class TestClientRedirectUris:
         client = get_client(db_path, "no-redirect-test")
         assert client is not None
         assert client.get_redirect_uris_list() == []
+
+
+class TestClientSecretAndSigningSecret:
+    def test_verify_client_secret_returns_false_when_no_secret_stored(
+        self, db_path: str
+    ) -> None:
+        """verify_client_secret returns False when the client has no stored secret."""
+        create_client(
+            db_path=db_path,
+            client_id="no-secret-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            # no client_secret
+        )
+        client = get_client(db_path, "no-secret-client")
+        assert client is not None
+        assert client.verify_client_secret(b"any-secret") is False
+
+    def test_get_signing_secret_returns_none_when_not_set(self, db_path: str) -> None:
+        """get_signing_secret returns None when no signing secret has been configured."""
+        create_client(
+            db_path=db_path,
+            client_id="no-signing-secret-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"client-secret",
+            # no signing_secret
+        )
+        client = get_client(db_path, "no-signing-secret-client")
+        assert client is not None
+        assert client.get_signing_secret() is None
+
+    def test_set_and_get_signing_secret_roundtrip(self, db_path: str) -> None:
+        """set_signing_secret stores the secret and get_signing_secret retrieves it."""
+        create_client(
+            db_path=db_path,
+            client_id="signing-roundtrip-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"client-secret",
+        )
+        client = get_client(db_path, "signing-roundtrip-client")
+        assert client is not None
+
+        with get_session(db_path) as session:
+            c = session.get(Client, "signing-roundtrip-client")
+            assert c is not None
+            c.set_signing_secret(b"my-new-signing-secret")
+            session.commit()
+
+        updated = get_client(db_path, "signing-roundtrip-client")
+        assert updated is not None
+        assert updated.get_signing_secret() == b"my-new-signing-secret"
+
+    def test_get_signing_secret_fingerprint_returns_none_when_not_set(
+        self, db_path: str
+    ) -> None:
+        """get_signing_secret_fingerprint returns None when no signing secret is set."""
+        create_client(
+            db_path=db_path,
+            client_id="no-fingerprint-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"client-secret",
+        )
+        client = get_client(db_path, "no-fingerprint-client")
+        assert client is not None
+        assert client.get_signing_secret_fingerprint() is None
