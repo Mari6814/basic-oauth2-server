@@ -1,13 +1,13 @@
 .PHONY: lint format test serve admin
 
+test: lint format
+	uv run -m pytest --cov=basic_oauth2_server tests/
+
 lint:
 	uv run ruff check --fix
 
 format:
 	uv run ruff format
-
-test:
-	uv run -m pytest tests/
 
 serve:
 	uv run -m basic_oauth2_server serve \
