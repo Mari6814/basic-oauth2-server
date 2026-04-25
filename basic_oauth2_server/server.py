@@ -235,7 +235,7 @@ def _render_oauth_error(
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "error_description": description},
-        headers=headers,
+        headers=headers or {},
     )
 
 
