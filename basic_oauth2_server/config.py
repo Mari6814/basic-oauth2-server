@@ -140,13 +140,21 @@ def ensure_app_key() -> None:
 
 
 def get_app_key() -> bytes:
-    """Get the APP_KEY for encryption, raising if not set."""
+    """Get the APP_KEY for encryption, raising if not set or too short."""
     key = os.environ.get("APP_KEY")
     if not key:
         raise ValueError("APP_KEY environment variable is required")
 
     try:
-        return base64.b64decode(key)
+        key_bytes = base64.b64decode(key)
     except Exception:
         # Treat as raw string if not valid base64
-        return key.encode("utf-8")
+        key_bytes = key.encode("utf-8")
+
+    if len(key_bytes) < 32:
+        raise ValueError(
+            f"APP_KEY must decode to at least 32 bytes, got {len(key_bytes)}. "
+            "Generate a new key with: python -c \"import secrets, base64; "
+            "print('APP_KEY=' + base64.b64encode(secrets.token_bytes(32)).decode())\""
+        )
+    return key_bytes

@@ -238,6 +238,12 @@ class TestGetAppKey:
             get_app_key()
 
     def test_returns_non_base64_value_as_utf8(self, monkeypatch: MonkeyPatch) -> None:
-        monkeypatch.setenv("APP_KEY", "not!!!base64")
+        # 32-character plain text — not valid base64, so it falls back to UTF-8 encoding
+        monkeypatch.setenv("APP_KEY", "not!!!base64_but_long_enough!!!!")
         key = get_app_key()
-        assert key == b"not!!!base64"
+        assert key == b"not!!!base64_but_long_enough!!!!"
+
+    def test_raises_if_key_too_short(self, monkeypatch: MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_KEY", "not!!!base64")
+        with pytest.raises(ValueError, match="at least 32 bytes"):
+            get_app_key()

@@ -55,12 +55,14 @@ def test_decrypt_with_wrong_key_fails() -> None:
         decrypt(encrypted, key2)
 
 
-def test_short_key_is_padded() -> None:
-    """Test that short keys are padded to 32 bytes."""
+def test_short_key_raises_value_error() -> None:
+    """Test that keys shorter than 32 bytes are rejected with a clear error."""
     short_key = b"shortkey"
     plaintext = b"test data"
 
-    encrypted = encrypt(plaintext, short_key)
-    decrypted = decrypt(encrypted, short_key)
+    with pytest.raises(ValueError, match="at least 32 bytes"):
+        encrypt(plaintext, short_key)
 
-    assert decrypted == plaintext
+    # Construct a minimally valid ciphertext to confirm decrypt also rejects short keys
+    with pytest.raises(ValueError, match="at least 32 bytes"):
+        decrypt(b"\x00" * 40, short_key)

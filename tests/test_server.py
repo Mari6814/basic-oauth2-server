@@ -24,7 +24,7 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     db_path = tmp_path / "test_oauth.db"
 
     # Set APP_KEY for encryption
-    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890").decode()
+    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890_padded!!").decode()
 
     init_db(str(db_path))
     yield str(db_path)

@@ -11,16 +11,20 @@ def encrypt(data: bytes, key: bytes) -> bytes:
 
     Args:
         data: The plaintext data to encrypt.
-        key: The encryption key (must be 16, 24, or 32 bytes).
+        key: The encryption key (must be at least 32 bytes; only the first 32 bytes are used).
 
     Returns:
         The encrypted data with nonce prepended.
+
+    Raises:
+        ValueError: If the key is shorter than 32 bytes.
     """
-    # Ensure key is proper length (use first 32 bytes or pad)
     if len(key) < 32:
-        key = key.ljust(32, b"\0")
-    else:
-        key = key[:32]
+        raise ValueError(
+            f"Encryption key must be at least 32 bytes, got {len(key)}. "
+            "Ensure APP_KEY is set to a sufficiently long secret."
+        )
+    key = key[:32]
 
     nonce = os.urandom(12)
     aesgcm = AESGCM(key)
@@ -33,19 +37,20 @@ def decrypt(encrypted_data: bytes, key: bytes) -> bytes:
 
     Args:
         encrypted_data: The encrypted data with nonce prepended.
-        key: The encryption key.
+        key: The encryption key (must be at least 32 bytes; only the first 32 bytes are used).
 
     Returns:
         The decrypted plaintext.
 
     Raises:
-        ValueError: If decryption fails.
+        ValueError: If the key is shorter than 32 bytes or decryption fails.
     """
-    # Ensure key is proper length
     if len(key) < 32:
-        key = key.ljust(32, b"\0")
-    else:
-        key = key[:32]
+        raise ValueError(
+            f"Encryption key must be at least 32 bytes, got {len(key)}. "
+            "Ensure APP_KEY is set to a sufficiently long secret."
+        )
+    key = key[:32]
 
     nonce = encrypted_data[:12]
     ciphertext = encrypted_data[12:]

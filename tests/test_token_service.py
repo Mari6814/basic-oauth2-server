@@ -21,7 +21,7 @@ KEYS_DIR = Path(__file__).parent / "keys"
 
 @pytest.fixture(autouse=True)
 def app_key() -> None:
-    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890").decode()
+    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890_padded!!").decode()
 
 
 def test_access_token_symmetric(tmp_path: Path) -> None:

@@ -28,7 +28,7 @@ from basic_oauth2_server.exceptions import (
 
 @pytest.fixture(autouse=True)
 def app_key() -> None:
-    os.environ["APP_KEY"] = base64.b64encode(b"test-authcode-key-1234567890").decode()
+    os.environ["APP_KEY"] = base64.b64encode(b"test-authcode-key-1234567890!!!!").decode()
 
 
 @pytest.fixture
