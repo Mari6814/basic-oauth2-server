@@ -99,5 +99,5 @@ def handle_client_credentials(
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": config.token_expires_in,
-        **({"scope": scope} if scope else {}),
+        **({"scope": " ".join(requested_scopes)} if requested_scopes else {}),
     }

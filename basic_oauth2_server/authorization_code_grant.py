@@ -68,9 +68,9 @@ def handle_authorize(
     Returns:
         A portion of the props required to visualize in the consent page.
     """
-    if code_challenge_method not in ("S256", "S512", "plain"):
+    if code_challenge_method not in ("S256",):
         raise InvalidRequestException(
-            "code_challenge_method must be S256, S512, or plain"
+            "code_challenge_method must be S256"
         )
 
     client = get_client(config.db_path, client_id)
@@ -136,6 +136,14 @@ def handle_authorize_confirm(
     The confirmed token has then been associated with the parameters passed to this
     function to create a valid authorization code and redirect URL.
     """
+    client = get_client(config.db_path, client_id)
+    if not client:
+        raise InvalidClientException("Invalid client")
+
+    allowed_uris = client.get_redirect_uris_list()
+    if not allowed_uris or redirect_uri not in allowed_uris:
+        raise InvalidRequestException("redirect_uri not registered for this client")
+
     code = create_authorization_code(
         db_path=config.db_path,
         client_id=client_id,
@@ -172,6 +180,10 @@ def handle_authorization_code(
         raise InvalidRequestException("Missing authorization code")
     if not code_verifier:
         raise InvalidRequestException("Missing PKCE code_verifier")
+    if not (43 <= len(code_verifier) <= 128):
+        raise InvalidRequestException(
+            "code_verifier must be between 43 and 128 characters"
+        )
 
     client = get_client(config.db_path, client_id)
     if not client:
@@ -228,10 +240,4 @@ def _verify_pkce(
         digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
         computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         return computed == code_challenge
-    elif code_challenge_method == "S512":
-        digest = hashlib.sha512(code_verifier.encode("ascii")).digest()
-        computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-        return computed == code_challenge
-    elif code_challenge_method == "plain":
-        return code_verifier == code_challenge
     return False

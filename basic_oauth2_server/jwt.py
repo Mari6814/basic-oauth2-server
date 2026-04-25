@@ -124,6 +124,7 @@ def create_access_token(
     claims: dict[str, Any] = {
         "sub": subject,
         "iat": now,
+        "nbf": now,
         "exp": now + expires_in,
         "jti": str(uuid.uuid4()),
     }

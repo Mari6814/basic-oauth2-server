@@ -9,6 +9,7 @@ import base64
 import json
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from jws_algorithms import SymmetricAlgorithm
@@ -33,6 +34,8 @@ class ConsentClaims:
     state: str
     scope: str | None
     audience: str | None
+    jti: str
+    exp: int
 
 
 def create_consent_token(
@@ -96,12 +99,18 @@ def create_consent_token(
 def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
     """Verify and decode a consent JWT.
 
+    Does NOT consume the JTI. The caller is responsible for calling
+    ``consume_consent_jti`` from ``db`` after all other checks pass
+    (e.g. user-mismatch checks) to prevent replay without allowing an
+    adversary to invalidate a legitimate user's pending token.
+
     Args:
         token: The JWT string to verify.
         config: The server configuration containing parameters required to verify the token.
 
     Returns:
-        A ConsentClaims dataclass with the decoded claims.
+        A ConsentClaims dataclass with the decoded claims, including ``jti``
+        and ``exp`` so the caller can record the token as used.
 
     Raises:
         InvalidRequestException: If the token is malformed, has an invalid
@@ -123,14 +132,19 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
     if not ALGORITHM.verify(key, f"{header_b64}.{payload_b64}", sig):
         raise InvalidRequestException("Invalid consent token signature")
 
-    if "iss" not in claims or claims["iss"] != config.app_url:
-        raise InvalidRequestException("Invalid consent token issuer")
-    if "aud" not in claims or claims["aud"] != config.app_url:
-        raise InvalidRequestException("Invalid consent token audience")
+    if config.app_url is not None:
+        if "iss" not in claims or claims["iss"] != config.app_url:
+            raise InvalidRequestException("Invalid consent token issuer")
+        if "aud" not in claims or claims["aud"] != config.app_url:
+            raise InvalidRequestException("Invalid consent token audience")
     if claims.get("exp", 0) < int(time.time()):
         raise InvalidRequestException("Consent token has expired")
     if claims.get("iat", 0) > int(time.time()):
         raise InvalidRequestException("Consent token issued in the future")
+
+    jti = claims.get("jti")
+    if not jti:
+        raise InvalidRequestException("Consent token missing jti claim")
 
     try:
         return ConsentClaims(
@@ -142,6 +156,8 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
             state=claims["state"],
             scope=claims.get("scope"),
             audience=claims.get("audience"),
+            jti=jti,
+            exp=int(claims.get("exp", 0)),
         )
     except KeyError as exc:
         raise InvalidRequestException(f"Consent token missing claim: {exc}") from exc

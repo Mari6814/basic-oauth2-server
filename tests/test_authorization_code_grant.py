@@ -115,10 +115,11 @@ class TestHandleAuthorizationCode:
                 client_secret=b64("test-secret"),
                 code=None,
                 redirect_uri=None,
-                code_verifier="verifier",
+                code_verifier="verifier-long-enough-for-rfc7636-43chars",
             )
 
     def test_client_not_found_raises(self, config: ServerConfig, db_path: str) -> None:
+        verifier = "a" * 43
         code = create_authorization_code(
             db_path=db_path,
             client_id="test-client",
@@ -127,7 +128,7 @@ class TestHandleAuthorizationCode:
             scope=None,
             audience=None,
             state=None,
-            code_challenge="challenge",
+            code_challenge=_s256_challenge(verifier),
         )
         with pytest.raises(InvalidClientException, match="Client not found"):
             handle_authorization_code(
@@ -136,7 +137,7 @@ class TestHandleAuthorizationCode:
                 client_secret=b64("test-secret"),
                 code=code,
                 redirect_uri=None,
-                code_verifier="verifier",
+                code_verifier=verifier,
             )
 
     def test_client_id_mismatch_raises(
@@ -150,6 +151,7 @@ class TestHandleAuthorizationCode:
             algorithm=SymmetricAlgorithm.HS256,
             signing_secret=b"other-signing-secret-1234567890",
         )
+        verifier = "b" * 43
         code = create_authorization_code(
             db_path=db_path,
             client_id="test-client",
@@ -158,7 +160,7 @@ class TestHandleAuthorizationCode:
             scope=None,
             audience=None,
             state=None,
-            code_challenge="challenge",
+            code_challenge=_s256_challenge(verifier),
         )
         with pytest.raises(InvalidGrantException, match="Client ID mismatch"):
             handle_authorization_code(
@@ -167,13 +169,13 @@ class TestHandleAuthorizationCode:
                 client_secret=b64("other-secret"),
                 code=code,
                 redirect_uri=None,
-                code_verifier="verifier",
+                code_verifier=verifier,
             )
 
     def test_redirect_uri_mismatch_raises(
         self, config: ServerConfig, db_path: str
     ) -> None:
-        code_verifier = "my-verifier-long-enough-for-s256"
+        code_verifier = "my-verifier-long-enough-for-rfc7636-1234567890"
         code = create_authorization_code(
             db_path=db_path,
             client_id="test-client",
@@ -196,9 +198,27 @@ class TestHandleAuthorizationCode:
 
 
 class TestVerifyPkcePlain:
-    def test_plain_method_succeeds(self, config: ServerConfig, db_path: str) -> None:
-        """PKCE with 'plain' method succeeds when verifier equals the challenge."""
-        code_verifier = "my-plain-verifier-string"
+    def test_plain_method_rejected_by_authorize(self, config: ServerConfig) -> None:
+        """PKCE with 'plain' method is rejected by handle_authorize (not RFC 7636 compliant)."""
+        from basic_oauth2_server.exceptions import InvalidRequestException as IRE
+
+        with pytest.raises(IRE, match="code_challenge_method must be S256"):
+            handle_authorize(
+                authorized_username="testuser",
+                client_id="test-client",
+                redirect_uri="https://example.com/callback",
+                code_challenge="my-plain-verifier",
+                code_challenge_method="plain",
+                scope=None,
+                audience=None,
+                state="state123",
+                config=config,
+            )
+
+    def test_short_code_verifier_raises(self, config: ServerConfig, db_path: str) -> None:
+        """code_verifier shorter than 43 characters is rejected."""
+        from basic_oauth2_server.exceptions import InvalidRequestException as IRE
+        verifier = "short"
         code = create_authorization_code(
             db_path=db_path,
             client_id="test-client",
@@ -207,16 +227,38 @@ class TestVerifyPkcePlain:
             scope=None,
             audience=None,
             state=None,
-            code_challenge=code_verifier,
-            code_challenge_method="plain",
+            code_challenge=_s256_challenge(verifier),
         )
-        result = handle_authorization_code(
-            config=config,
+        with pytest.raises(IRE, match="43 and 128 characters"):
+            handle_authorization_code(
+                config=config,
+                client_id="test-client",
+                client_secret=b64("test-secret"),
+                code=code,
+                redirect_uri=None,
+                code_verifier=verifier,
+            )
+
+    def test_long_code_verifier_raises(self, config: ServerConfig, db_path: str) -> None:
+        """code_verifier longer than 128 characters is rejected."""
+        from basic_oauth2_server.exceptions import InvalidRequestException as IRE
+        verifier = "a" * 129
+        code = create_authorization_code(
+            db_path=db_path,
             client_id="test-client",
-            client_secret=b64("test-secret"),
-            code=code,
+            user_id="testuser",
             redirect_uri=None,
-            code_verifier=code_verifier,
+            scope=None,
+            audience=None,
+            state=None,
+            code_challenge=_s256_challenge(verifier),
         )
-        assert "access_token" in result
-        assert result["token_type"] == "Bearer"
+        with pytest.raises(IRE, match="43 and 128 characters"):
+            handle_authorization_code(
+                config=config,
+                client_id="test-client",
+                client_secret=b64("test-secret"),
+                code=code,
+                redirect_uri=None,
+                code_verifier=verifier,
+            )

@@ -1,6 +1,7 @@
 """FastAPI OAuth server implementation."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
@@ -9,7 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import get_user, init_db
+from basic_oauth2_server.db import consume_consent_jti, get_user, init_db
 from basic_oauth2_server.exceptions import (
     InvalidClientException,
     InvalidGrantException,
@@ -55,8 +56,11 @@ def create_app(config: ServerConfig) -> FastAPI:
                 exc.status_code,
                 exc.description,
             )
+        headers = {}
+        if exc.status_code == 401:
+            headers["WWW-Authenticate"] = 'Basic realm="token"'
         return _render_oauth_error(
-            exc.error, exc.description or "", status_code=exc.status_code
+            exc.error, exc.description or "", status_code=exc.status_code, headers=headers
         )
 
     @app.exception_handler(Exception)
@@ -159,6 +163,10 @@ def create_app(config: ServerConfig) -> FastAPI:
                 detail="Forbidden: token user does not match authenticated user",
             )
 
+        expires_at = datetime.fromtimestamp(claims.exp, tz=timezone.utc)
+        if not consume_consent_jti(config.db_path, claims.jti, expires_at):
+            raise InvalidRequestException("Consent token has already been used")
+
         redirect_url = handle_authorize_confirm(
             client_id=client_id,
             redirect_uri=redirect_uri,
@@ -224,12 +232,13 @@ def create_app(config: ServerConfig) -> FastAPI:
 
 
 def _render_oauth_error(
-    error: str, description: str, status_code: int = 400
+    error: str, description: str, status_code: int = 400, headers: dict | None = None
 ) -> JSONResponse:
     """Return a JSON response according to what OAuth2 expects."""
     return JSONResponse(
         status_code=status_code,
         content={"error": error, "error_description": description},
+        headers=headers,
     )
 
 

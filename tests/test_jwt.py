@@ -93,8 +93,10 @@ def test_create_access_token() -> None:
     assert payload["scope"] == "read write"
     assert payload["aud"] == "https://api.example.com"
     assert "iat" in payload
+    assert "nbf" in payload
     assert "exp" in payload
     assert payload["exp"] - payload["iat"] == 3600
+    assert payload["nbf"] == payload["iat"]
 
 
 def test_create_jwt_with_expires_in() -> None:

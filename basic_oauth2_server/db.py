@@ -15,6 +15,7 @@ from sqlalchemy import (
     create_engine,
     Index,
     event,
+    exc as sqlalchemy_exc,
     update,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -73,7 +74,7 @@ class Client(TimestampMixin, Base):
     def verify_client_secret(self, user_secret: str | bytes) -> bool:
         """Verify that the provided secret matches the stored hash.
 
-        Compares the provided user input with the stored hash of the client
+        Compares the provided user input with the stored bcrypt hash of the client
         secret and returns True if they match, False otherwise.
 
         Args:
@@ -89,15 +90,14 @@ class Client(TimestampMixin, Base):
                 user_secret = base64.b64decode(user_secret, validate=True)
             except Exception:
                 return False
-        if secrets.compare_digest(
-            self.client_secret, hashlib.sha256(user_secret).hexdigest()
-        ):
-            return True
-        return False
+        try:
+            return bcrypt.checkpw(user_secret, self.client_secret.encode())
+        except Exception:
+            return False
 
     def set_secret(self, secret: bytes) -> None:
-        """Hash and store the client secret using SHA256."""
-        self.client_secret = hashlib.sha256(secret).hexdigest()
+        """Hash and store the client secret using bcrypt."""
+        self.client_secret = bcrypt.hashpw(secret, bcrypt.gensalt()).decode()
 
     def get_signing_secret(self) -> bytes | None:
         """Decrypt and return the signing secret (for HMAC algorithms)."""
@@ -174,11 +174,42 @@ class AuthorizationCode(TimestampMixin, Base):
     code_challenge_method: Mapped[str] = mapped_column(
         String(10), default="S256", nullable=False
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 Index("ix_auth_codes_client_id", AuthorizationCode.client_id)
+
+
+class UsedConsentJti(Base):
+    """Tracks consent token JTIs that have already been used, preventing replay attacks."""
+
+    __tablename__ = "used_consent_jtis"
+
+    jti: Mapped[str] = mapped_column(String(128), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+def consume_consent_jti(db_path: str, jti: str, expires_at: datetime) -> bool:
+    """Atomically record a consent token JTI as used.
+
+    Returns True if the JTI was successfully recorded (first use), or False if
+    it was already present (replay attempt). Also deletes expired JTIs to keep
+    the table small.
+    """
+    try:
+        with get_session(db_path) as session:
+            if session.get(UsedConsentJti, jti) is not None:
+                return False
+            session.add(UsedConsentJti(jti=jti, expires_at=expires_at))
+            now = datetime.now(timezone.utc)
+            session.query(UsedConsentJti).filter(
+                UsedConsentJti.expires_at < now
+            ).delete(synchronize_session=False)
+            session.commit()
+            return True
+    except sqlalchemy_exc.IntegrityError:
+        return False
 
 
 def create_authorization_code(

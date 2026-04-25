@@ -161,6 +161,8 @@ class TestVerifyRoundTrip:
         assert claims.state == "xyz"
         assert claims.scope is None
         assert claims.audience is None
+        assert isinstance(claims.jti, str) and len(claims.jti) > 0
+        assert claims.exp > 0
 
     def test_with_scope(self, token_with_scope: str, config: ServerConfig) -> None:
         claims = verify_consent_token(token_with_scope, config=config)
@@ -276,11 +278,18 @@ def _make_signed_token(claims: dict, app_key: bytes) -> str:
 class TestVerifyRejectsInvalidClaims:
     """Test that verify_consent_token rejects tokens with bad iss/aud/iat claims."""
 
+    APP_URL = "https://auth.example.com"
+
     @pytest.fixture
     def app_key_bytes(self) -> bytes:
         return base64.b64decode(base64.b64encode(b"test-consent-key-32bytes!!!!!!!!"))
 
-    def test_wrong_issuer(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+    @pytest.fixture
+    def config_with_url(self) -> ServerConfig:
+        """Config with a non-None app_url so iss/aud checks are enforced."""
+        return ServerConfig(app_url=self.APP_URL)
+
+    def test_wrong_issuer(self, config_with_url: ServerConfig, app_key_bytes: bytes) -> None:
         now = int(time.time())
         claims = {
             "sub": "alice",
@@ -290,15 +299,16 @@ class TestVerifyRejectsInvalidClaims:
             "code_challenge_method": "S256",
             "state": "s",
             "iss": "https://wrong-issuer.example.com",
-            "aud": config.app_url,
+            "aud": self.APP_URL,
             "iat": now,
             "exp": now + 300,
+            "jti": "test-jti-wrong-issuer",
         }
         token = _make_signed_token(claims, app_key_bytes)
         with pytest.raises(InvalidRequestException, match="issuer"):
-            verify_consent_token(token, config=config)
+            verify_consent_token(token, config=config_with_url)
 
-    def test_wrong_audience(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+    def test_wrong_audience(self, config_with_url: ServerConfig, app_key_bytes: bytes) -> None:
         now = int(time.time())
         claims = {
             "sub": "alice",
@@ -307,14 +317,38 @@ class TestVerifyRejectsInvalidClaims:
             "code_challenge": "x",
             "code_challenge_method": "S256",
             "state": "s",
-            "iss": config.app_url,
+            "iss": self.APP_URL,
             "aud": "https://wrong-audience.example.com",
             "iat": now,
             "exp": now + 300,
+            "jti": "test-jti-wrong-audience",
         }
         token = _make_signed_token(claims, app_key_bytes)
         with pytest.raises(InvalidRequestException, match="audience"):
-            verify_consent_token(token, config=config)
+            verify_consent_token(token, config=config_with_url)
+
+    def test_iss_aud_skipped_when_app_url_is_none(
+        self, config: ServerConfig, app_key_bytes: bytes
+    ) -> None:
+        """When app_url is None, iss/aud claims are not validated."""
+        now = int(time.time())
+        claims = {
+            "sub": "alice",
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": "https://any-issuer.example.com",
+            "aud": "https://any-audience.example.com",
+            "iat": now,
+            "exp": now + 300,
+            "jti": "test-jti-skip-iss-aud",
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        # Should not raise – iss/aud validation is skipped
+        result = verify_consent_token(token, config=config)
+        assert result.username == "alice"
 
     def test_future_iat(self, config: ServerConfig, app_key_bytes: bytes) -> None:
         now = int(time.time())
@@ -329,6 +363,7 @@ class TestVerifyRejectsInvalidClaims:
             "aud": config.app_url,
             "iat": now + 9999,
             "exp": now + 300,
+            "jti": "test-jti-future-iat",
         }
         token = _make_signed_token(claims, app_key_bytes)
         with pytest.raises(InvalidRequestException, match="future"):
@@ -349,7 +384,29 @@ class TestVerifyRejectsInvalidClaims:
             "aud": config.app_url,
             "iat": now,
             "exp": now + 300,
+            "jti": "test-jti-missing-sub",
         }
         token = _make_signed_token(claims, app_key_bytes)
         with pytest.raises(InvalidRequestException, match="missing claim"):
+            verify_consent_token(token, config=config)
+
+    def test_missing_jti_raises(
+        self, config: ServerConfig, app_key_bytes: bytes
+    ) -> None:
+        now = int(time.time())
+        claims = {
+            "sub": "alice",
+            "client_id": "c",
+            "redirect_uri": "u",
+            "code_challenge": "x",
+            "code_challenge_method": "S256",
+            "state": "s",
+            "iss": config.app_url,
+            "aud": config.app_url,
+            "iat": now,
+            "exp": now + 300,
+            # no jti
+        }
+        token = _make_signed_token(claims, app_key_bytes)
+        with pytest.raises(InvalidRequestException, match="jti"):
             verify_consent_token(token, config=config)

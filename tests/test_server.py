@@ -155,6 +155,8 @@ def test_token_endpoint_invalid_client(client_with_db: TestClient) -> None:
     assert response.status_code == 401
     data = response.json()
     assert data["error"] == "invalid_client"
+    assert "WWW-Authenticate" in response.headers
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="token"'
 
 
 def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
@@ -168,6 +170,7 @@ def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
     assert response.status_code == 401
     data = response.json()
     assert data["error"] == "invalid_client"
+    assert "WWW-Authenticate" in response.headers
 
 
 def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> None:
@@ -824,13 +827,15 @@ def test_authorization_code_wrong_verifier(client_with_db: TestClient) -> None:
     )
     code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
 
+    # Use a different verifier that is the right length (43–128 chars) but wrong value
+    wrong_verifier = "w" * 43
     response = client_with_db.post(
         "/oauth2/token",
         data={
             "grant_type": "authorization_code",
             "code": code,
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": "wrong-verifier-value",
+            "code_verifier": wrong_verifier,
         },
         headers=_basic_auth_header("test-client", b64("test-secret")),
     )
@@ -1056,76 +1061,67 @@ def _pkce_s512_pair() -> tuple[str, str]:
     return verifier, challenge
 
 
-def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
-    """Test authorization code flow with S512 PKCE method."""
+def test_authorization_code_flow_s512_rejected(client_with_db: TestClient) -> None:
+    """Test that S512 code_challenge_method is rejected by the /authorize endpoint."""
     verifier, challenge = _pkce_s512_pair()
 
-    consent_token = _get_consent_token(
-        client_with_db,
-        client_id="test-client",
-        redirect_uri="http://localhost/callback",
-        challenge=challenge,
-        code_challenge_method="S512",
-        scope="read",
-        state="s512-state",
-    )
-    response = client_with_db.post(
-        "/authorize/confirm",
-        data={"token": consent_token},
-        headers=_basic_auth_header("testuser", "testpass"),
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
-
-    response = client_with_db.post(
-        "/oauth2/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "test-client",
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": verifier,
+            "code_challenge": challenge,
+            "code_challenge_method": "S512",
+            "state": "s512-state",
         },
-        headers=_basic_auth_header("test-client", b64("test-secret")),
+        headers=_basic_auth_header("testuser", "testpass"),
     )
-    assert response.status_code == 200
-    assert "access_token" in response.json()
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
+
+
+def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
+    """Test that S512 PKCE method is rejected (non-standard)."""
+    verifier, challenge = _pkce_s512_pair()
+
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": challenge,
+            "code_challenge_method": "S512",
+            "scope": "read",
+            "state": "s512-state",
+        },
+        headers=_basic_auth_header("testuser", "testpass"),
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
 
 
 def test_authorization_code_flow_s512_wrong_verifier(
     client_with_db: TestClient,
 ) -> None:
-    """Test that wrong PKCE verifier is rejected with S512 method."""
+    """Test that S512 PKCE method is also rejected when the verifier would be wrong."""
     verifier, challenge = _pkce_s512_pair()
 
-    consent_token = _get_consent_token(
-        client_with_db,
-        client_id="test-client",
-        redirect_uri="http://localhost/callback",
-        challenge=challenge,
-        code_challenge_method="S512",
-        state="s512-wrong-state",
-    )
-    response = client_with_db.post(
-        "/authorize/confirm",
-        data={"token": consent_token},
-        headers=_basic_auth_header("testuser", "testpass"),
-        follow_redirects=False,
-    )
-    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
-
-    response = client_with_db.post(
-        "/oauth2/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "test-client",
             "redirect_uri": "http://localhost/callback",
-            "code_verifier": "wrong-verifier",
+            "code_challenge": challenge,
+            "code_challenge_method": "S512",
+            "state": "s512-wrong-state",
         },
-        headers=_basic_auth_header("test-client", b64("test-secret")),
+        headers=_basic_auth_header("testuser", "testpass"),
     )
     assert response.status_code == 400
-    assert response.json()["error"] == "invalid_grant"
+    assert response.json()["error"] == "invalid_request"
 
 
 def test_authorize_redirect_uri_validation(temp_db: str) -> None:
@@ -1459,6 +1455,38 @@ class TestAuthorizeConfirmUserMismatch:
             follow_redirects=False,
         )
         assert response.status_code == 302
+
+
+def test_consent_token_replay_is_rejected(client_with_db: TestClient) -> None:
+    """A consent token that has already been used cannot be replayed."""
+    verifier, challenge = _pkce_pair()
+
+    consent_token = _get_consent_token(
+        client_with_db,
+        client_id="test-client",
+        redirect_uri="http://localhost/callback",
+        challenge=challenge,
+        state="replay-test-state",
+    )
+
+    # First use succeeds
+    response = client_with_db.post(
+        "/authorize/confirm",
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    # Replay is rejected
+    response = client_with_db.post(
+        "/authorize/confirm",
+        data={"token": consent_token},
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_request"
 
 
 def test_authorize_unsupported_response_type(client_with_db: TestClient) -> None:
