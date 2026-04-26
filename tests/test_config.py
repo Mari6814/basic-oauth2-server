@@ -194,7 +194,11 @@ class TestServerConfigFromEnv:
 
     @pytest.mark.parametrize(
         "app_url",
-        ["https://auth.example.com", "http://localhost:8080", "https://example.com/oauth2"],
+        [
+            "https://auth.example.com",
+            "http://localhost:8080",
+            "https://example.com/oauth2",
+        ],
     )
     def test_accepts_absolute_app_url(self, app_url: str) -> None:
         """Direct construction accepts valid absolute URLs."""
