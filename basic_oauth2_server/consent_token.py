@@ -113,11 +113,16 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
         raise InvalidRequestException("Invalid consent token")
 
     try:
+        header_bytes = base64.urlsafe_b64decode(header_b64 + "==").decode("utf-8")
+        header: dict[str, Any] = json.loads(header_bytes)
         sig = base64.urlsafe_b64decode(sig_b64 + "==")
         payload_bytes = base64.urlsafe_b64decode(payload_b64 + "==").decode("utf-8")
         claims: dict[str, Any] = json.loads(payload_bytes)
     except Exception:
         raise InvalidRequestException("Invalid consent token")
+
+    if header.get("alg") != ALGORITHM.name:
+        raise InvalidRequestException("Invalid consent token algorithm")
 
     key = get_app_key()
     if not ALGORITHM.verify(key, f"{header_b64}.{payload_b64}", sig):

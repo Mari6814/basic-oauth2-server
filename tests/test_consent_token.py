@@ -197,7 +197,7 @@ class TestVerifyRejectsSignature:
         header["alg"] = "none"
         tampered_header_b64 = _b64url_encode(json.dumps(header).encode())
         tampered_token = f"{tampered_header_b64}.{payload_b64}.{sig_b64}"
-        with pytest.raises(InvalidRequestException, match="signature"):
+        with pytest.raises(InvalidRequestException, match="algorithm"):
             verify_consent_token(tampered_token, config=config)
 
     def test_wrong_signature(self, valid_token: str, config: ServerConfig) -> None:
