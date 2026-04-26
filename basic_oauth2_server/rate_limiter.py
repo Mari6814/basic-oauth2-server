@@ -5,9 +5,6 @@ import time
 
 logger = logging.getLogger(__name__)
 
-REQUESTS_PER_MINUTE = 20
-WINDOW_SIZE = 60  # seconds
-
 
 class RateLimiter:
     """
@@ -22,8 +19,8 @@ class RateLimiter:
 
     def __init__(
         self,
-        requests_per_minute: int = REQUESTS_PER_MINUTE,
-        window_size: int = WINDOW_SIZE,
+        requests_per_minute: int = 20,
+        window_size: int = 60,
         maxsize: int = 1000,
     ):
         self.requests_per_minute = requests_per_minute
