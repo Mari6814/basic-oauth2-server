@@ -1,7 +1,7 @@
 .PHONY: lint format test serve admin
 
 test: lint format
-	uv run -m pytest --cov=basic_oauth2_server tests/ --cov-report=term-missing
+	uv run -m pytest --cov=basic_oauth2_server tests/ --cov-report=term-missing --cov-fail-under=99
 
 lint:
 	uv run ruff check --fix
