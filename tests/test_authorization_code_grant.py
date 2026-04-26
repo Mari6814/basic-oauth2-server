@@ -28,7 +28,9 @@ from basic_oauth2_server.exceptions import (
 
 @pytest.fixture(autouse=True)
 def app_key() -> None:
-    os.environ["APP_KEY"] = base64.b64encode(b"test-authcode-key-1234567890!!!!").decode()
+    os.environ["APP_KEY"] = base64.b64encode(
+        b"test-authcode-key-1234567890!!!!"
+    ).decode()
 
 
 @pytest.fixture
@@ -195,28 +197,21 @@ class TestHandleAuthorizationCode:
             )
 
 
-class TestVerifyPkcePlain:
-    def test_plain_method_succeeds(self, config: ServerConfig, db_path: str) -> None:
-        """PKCE with 'plain' method succeeds when verifier equals the challenge."""
-        code_verifier = "my-plain-verifier-string"
-        code = create_authorization_code(
-            db_path=db_path,
-            client_id="test-client",
-            user_id="testuser",
-            redirect_uri=None,
-            scope=None,
-            audience=None,
-            state=None,
-            code_challenge=code_verifier,
-            code_challenge_method="plain",
-        )
-        result = handle_authorization_code(
-            config=config,
-            client_id="test-client",
-            client_secret=b64("test-secret"),
-            code=code,
-            redirect_uri=None,
-            code_verifier=code_verifier,
-        )
-        assert "access_token" in result
-        assert result["token_type"] == "Bearer"
+class TestVerifyPkceUnsupportedMethods:
+    @pytest.mark.parametrize("method", ["plain", "S512", "INVALID"])
+    def test_unsupported_method_rejected(
+        self, config: ServerConfig, method: str
+    ) -> None:
+        """Only S256 is accepted; plain, S512, and anything else must be rejected."""
+        with pytest.raises(InvalidRequestException, match="code_challenge_method"):
+            handle_authorize(
+                authorized_username="testuser",
+                client_id="test-client",
+                redirect_uri="http://localhost/callback",
+                code_challenge="dummychallenge",
+                code_challenge_method=method,
+                scope=None,
+                audience=None,
+                state="state",
+                config=config,
+            )

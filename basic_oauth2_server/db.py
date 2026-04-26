@@ -169,7 +169,7 @@ class AuthorizationCode(TimestampMixin, Base):
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
     audience: Mapped[str | None] = mapped_column(Text, nullable=True)
     state: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # PKCE: code_challenge and method (S256 or plain)
+    # PKCE: code_challenge and method (only S256 is supported)
     code_challenge: Mapped[str | None] = mapped_column(String(128), nullable=True)
     code_challenge_method: Mapped[str] = mapped_column(
         String(10), default="S256", nullable=False

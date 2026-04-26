@@ -59,7 +59,7 @@ def handle_authorize(
         client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
         redirect_uri: The url to send the authorization code to after the user confirms. Must match one of the redirect URIs registered for the client.
         code_challenge: The PKCE code challenge from the authorization request.
-        code_challenge_method: The PKCE code challenge method: "S256", "S512", or "plain".
+        code_challenge_method: The PKCE code challenge method. Only "S256" is supported.
         scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
         audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
         state: PKCE state parameter.
@@ -68,10 +68,8 @@ def handle_authorize(
     Returns:
         A portion of the props required to visualize in the consent page.
     """
-    if code_challenge_method not in ("S256", "S512", "plain"):
-        raise InvalidRequestException(
-            "code_challenge_method must be S256, S512, or plain"
-        )
+    if code_challenge_method != "S256":
+        raise InvalidRequestException("code_challenge_method must be S256")
 
     client = get_client(config.db_path, client_id)
     if not client:
@@ -228,10 +226,4 @@ def _verify_pkce(
         digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
         computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
         return computed == code_challenge
-    elif code_challenge_method == "S512":
-        digest = hashlib.sha512(code_verifier.encode("ascii")).digest()
-        computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-        return computed == code_challenge
-    elif code_challenge_method == "plain":
-        return code_verifier == code_challenge
     return False

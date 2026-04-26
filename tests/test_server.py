@@ -24,7 +24,9 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     db_path = tmp_path / "test_oauth.db"
 
     # Set APP_KEY for encryption
-    os.environ["APP_KEY"] = base64.b64encode(b"test-app-key-1234567890_padded!!").decode()
+    os.environ["APP_KEY"] = base64.b64encode(
+        b"test-app-key-1234567890_padded!!"
+    ).decode()
 
     init_db(str(db_path))
     yield str(db_path)
@@ -1048,84 +1050,23 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
     assert response.json()["error"] == "invalid_scope"
 
 
-def _pkce_s512_pair() -> tuple[str, str]:
-    """Generate a PKCE code_verifier and S512 code_challenge."""
-    verifier = secrets.token_urlsafe(48)
-    digest = hashlib.sha512(verifier.encode("ascii")).digest()
-    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return verifier, challenge
-
-
-def test_authorization_code_flow_s512_pkce(client_with_db: TestClient) -> None:
-    """Test authorization code flow with S512 PKCE method."""
-    verifier, challenge = _pkce_s512_pair()
-
-    consent_token = _get_consent_token(
-        client_with_db,
-        client_id="test-client",
-        redirect_uri="http://localhost/callback",
-        challenge=challenge,
-        code_challenge_method="S512",
-        scope="read",
-        state="s512-state",
-    )
-    response = client_with_db.post(
-        "/authorize/confirm",
-        data={"token": consent_token},
-        headers=_basic_auth_header("testuser", "testpass"),
-        follow_redirects=False,
-    )
-    assert response.status_code == 302
-    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
-
-    response = client_with_db.post(
-        "/oauth2/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": "http://localhost/callback",
-            "code_verifier": verifier,
-        },
-        headers=_basic_auth_header("test-client", b64("test-secret")),
-    )
-    assert response.status_code == 200
-    assert "access_token" in response.json()
-
-
-def test_authorization_code_flow_s512_wrong_verifier(
-    client_with_db: TestClient,
-) -> None:
-    """Test that wrong PKCE verifier is rejected with S512 method."""
-    verifier, challenge = _pkce_s512_pair()
-
-    consent_token = _get_consent_token(
-        client_with_db,
-        client_id="test-client",
-        redirect_uri="http://localhost/callback",
-        challenge=challenge,
-        code_challenge_method="S512",
-        state="s512-wrong-state",
-    )
-    response = client_with_db.post(
-        "/authorize/confirm",
-        data={"token": consent_token},
-        headers=_basic_auth_header("testuser", "testpass"),
-        follow_redirects=False,
-    )
-    code = parse_qs(urlparse(response.headers["location"]).query)["code"][0]
-
-    response = client_with_db.post(
-        "/oauth2/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": "http://localhost/callback",
-            "code_verifier": "wrong-verifier",
-        },
-        headers=_basic_auth_header("test-client", b64("test-secret")),
-    )
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_grant"
+def test_authorize_unsupported_pkce_method_rejected(client_with_db: TestClient) -> None:
+    """Test that only S256 is accepted; plain and S512 are rejected."""
+    for method in ("plain", "S512"):
+        response = client_with_db.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": "test-client",
+                "redirect_uri": "http://localhost/callback",
+                "code_challenge": "dummychallenge",
+                "code_challenge_method": method,
+                "state": f"{method}-state",
+            },
+            headers=_basic_auth_header("testuser", "testpass"),
+        )
+        assert response.status_code == 400, f"{method} should be rejected"
+        assert response.json()["error"] == "invalid_request"
 
 
 def test_authorize_redirect_uri_validation(temp_db: str) -> None:

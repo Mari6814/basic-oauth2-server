@@ -154,7 +154,7 @@ def get_app_key() -> bytes:
     if len(key_bytes) < 32:
         raise ValueError(
             f"APP_KEY must decode to at least 32 bytes, got {len(key_bytes)}. "
-            "Generate a new key with: python -c \"import secrets, base64; "
+            'Generate a new key with: python -c "import secrets, base64; '
             "print('APP_KEY=' + base64.b64encode(secrets.token_bytes(32)).decode())\""
         )
     return key_bytes
