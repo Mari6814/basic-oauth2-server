@@ -12,10 +12,10 @@ from jws_algorithms import AsymmetricAlgorithm
 from .utils import decode_prefixed_utf8
 
 
-def _validate_app_url(app_url: str | None) -> None:
-    """Validate that app_url, when provided, is an absolute URI."""
-    if app_url is None:
-        return
+def _validate_app_url(app_url: str) -> None:
+    """Validate that app_url is a non-empty absolute URI."""
+    if not isinstance(app_url, str):
+        raise ValueError("app_url must be a non-empty absolute URI")
 
     if app_url != app_url.strip() or not app_url:
         raise ValueError("app_url must be a non-empty absolute URI")
@@ -32,7 +32,7 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 8080
     db_path: str = "./oauth.db"
-    app_url: str | None = None  # Issuer URL for JWT 'iss' claim
+    app_url: str = "http://localhost:8080"  # Issuer URL for JWT 'iss' claim
     # Private keys for asymmetric algorithms (each algorithm family needs its own key)
     rsa_private_key: str | None = None  # For RS256, RS384, RS512, PS256, PS384, PS512
     ec_p256_private_key: str | None = None  # For ES256
@@ -102,7 +102,7 @@ class ServerConfig:
             host=os.environ.get("OAUTH_HOST", "localhost"),
             port=int(os.environ.get("OAUTH_PORT", "8080")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
-            app_url=os.environ.get("APP_URL"),
+            app_url=os.environ.get("APP_URL", "http://localhost:8080"),
             rsa_private_key=os.environ.get("OAUTH_RSA_PRIVATE_KEY"),
             ec_p256_private_key=os.environ.get("OAUTH_EC_P256_PRIVATE_KEY"),
             ec_p384_private_key=os.environ.get("OAUTH_EC_P384_PRIVATE_KEY"),
@@ -121,7 +121,7 @@ class ServerConfig:
 class AdminConfig:
     """Configuration for the admin dashboard."""
 
-    app_url: str | None = None
+    app_url: str = "http://localhost:8080"
     host: str = "localhost"
     port: int = 8081
     db_path: str = "./oauth.db"
@@ -136,7 +136,7 @@ class AdminConfig:
     def from_env(cls) -> Self:
         """Create configuration from environment variables."""
         return cls(
-            app_url=os.environ.get("APP_URL"),
+            app_url=os.environ.get("APP_URL", "http://localhost:8080"),
             host=os.environ.get("OAUTH_ADMIN_HOST", "localhost"),
             port=int(os.environ.get("OAUTH_ADMIN_PORT", "8081")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),

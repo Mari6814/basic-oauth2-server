@@ -39,7 +39,7 @@ def set_app_key(monkeypatch: MonkeyPatch) -> None:
 
 @pytest.fixture
 def config() -> ServerConfig:
-    """Default server config (no app_url) used for consent token tests."""
+    """Default server config used for consent token tests."""
     return ServerConfig()
 
 

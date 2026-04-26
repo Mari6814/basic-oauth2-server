@@ -167,7 +167,7 @@ class TestServerConfigFromEnv:
         assert config.host == "localhost"
         assert config.port == 8080
         assert config.db_path == "./oauth.db"
-        assert config.app_url is None
+        assert config.app_url == "http://localhost:8080"
         assert config.token_expires_in == 3600
 
     def test_reads_env_vars(self, monkeypatch: MonkeyPatch) -> None:
@@ -214,6 +214,11 @@ class TestServerConfigFromEnv:
         with pytest.raises(ValueError, match="app_url"):
             ServerConfig(app_url=app_url)
 
+    def test_rejects_none_app_url(self) -> None:
+        """Runtime None must not be accepted for app_url."""
+        with pytest.raises(ValueError, match="app_url"):
+            ServerConfig(app_url=None)  # type: ignore[arg-type]
+
 
 class TestAdminConfigFromEnv:
     def test_defaults_when_no_env_vars(self, monkeypatch: MonkeyPatch) -> None:
@@ -224,7 +229,7 @@ class TestAdminConfigFromEnv:
         assert config.host == "localhost"
         assert config.port == 8081
         assert config.db_path == "./oauth.db"
-        assert config.app_url is None
+        assert config.app_url == "http://localhost:8080"
 
     def test_reads_env_vars(self, monkeypatch: MonkeyPatch) -> None:
         """from_env picks up configured environment variables."""
