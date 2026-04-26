@@ -7,6 +7,7 @@ the user then can confirm or deny.
 
 import base64
 import json
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -33,6 +34,7 @@ class ConsentClaims:
     state: str
     scope: str | None
     audience: str | None
+    jti: str
 
 
 def create_consent_token(
@@ -69,7 +71,9 @@ def create_consent_token(
         A signed JWT string.
     """
     now = int(time.time())
+    jti = secrets.token_urlsafe(32)
     claims: dict[str, Any] = {
+        "jti": jti,
         "sub": username,
         "iat": now,
         "exp": now + expires_in,
@@ -147,6 +151,7 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
             state=claims["state"],
             scope=claims.get("scope"),
             audience=claims.get("audience"),
+            jti=claims["jti"],
         )
     except KeyError as exc:
         raise InvalidRequestException(f"Consent token missing claim: {exc}") from exc
