@@ -2,6 +2,7 @@
 
 import base64
 import os
+import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,6 +141,7 @@ class TestAuthorizationCodeTimestamps:
             audience=None,
             state=None,
             code_challenge=None,
+            consent_jti=secrets.token_urlsafe(32),
         )
         after = datetime.now(timezone.utc)
 
@@ -159,6 +161,7 @@ class TestAuthorizationCodeTimestamps:
             audience=None,
             state=None,
             code_challenge=None,
+            consent_jti=secrets.token_urlsafe(32),
         )
         after = datetime.now(timezone.utc)
 
@@ -177,6 +180,7 @@ class TestAuthorizationCodeTimestamps:
             audience=None,
             state=None,
             code_challenge=None,
+            consent_jti=secrets.token_urlsafe(32),
         )
         record = get_authorization_code(db_path, code)
         assert record is not None

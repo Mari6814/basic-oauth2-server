@@ -126,6 +126,7 @@ def handle_authorize_confirm(
     state: str,
     username: str,
     config: ServerConfig,
+    consent_jti: str,
 ) -> str:
     """Create an authorization code and redirect to the client with the code.
 
@@ -144,6 +145,7 @@ def handle_authorize_confirm(
         state=state,
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
+        consent_jti=consent_jti,
     )
 
     redirect_params: dict[str, str] = {"code": code, "state": state}

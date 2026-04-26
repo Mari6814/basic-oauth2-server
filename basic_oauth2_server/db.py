@@ -184,6 +184,7 @@ class AuthorizationCode(TimestampMixin, Base):
         DateTime(timezone=True), nullable=False
     )
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consent_jti: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
 
 
 Index("ix_auth_codes_client_id", AuthorizationCode.client_id)
@@ -198,12 +199,16 @@ def create_authorization_code(
     audience: str | None,
     state: str | None,
     code_challenge: str | None,
+    consent_jti: str,
     code_challenge_method: str = "S256",
     expires_in: int = 600,
 ) -> str:
     """Create and store a new authorization code. Returns the code string."""
     code = secrets.token_urlsafe(48)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    if not consent_jti:
+        raise ValueError("consent_jti is required to create an authorization code")
 
     with get_session(db_path) as session:
         auth_code = AuthorizationCode(
@@ -217,6 +222,7 @@ def create_authorization_code(
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
             expires_at=expires_at,
+            consent_jti=consent_jti,
         )
         session.add(auth_code)
         session.commit()

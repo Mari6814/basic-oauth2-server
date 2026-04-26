@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import os
+import secrets
 from pathlib import Path
 
 import pytest
@@ -130,6 +131,7 @@ class TestHandleAuthorizationCode:
             audience=None,
             state=None,
             code_challenge="challenge",
+            consent_jti=secrets.token_urlsafe(32),
         )
         with pytest.raises(InvalidClientException, match="Client not found"):
             handle_authorization_code(
@@ -161,6 +163,7 @@ class TestHandleAuthorizationCode:
             audience=None,
             state=None,
             code_challenge="challenge",
+            consent_jti=secrets.token_urlsafe(32),
         )
         with pytest.raises(InvalidGrantException, match="Client ID mismatch"):
             handle_authorization_code(
@@ -185,6 +188,7 @@ class TestHandleAuthorizationCode:
             audience=None,
             state=None,
             code_challenge=_s256_challenge(code_verifier),
+            consent_jti=secrets.token_urlsafe(32),
         )
         with pytest.raises(InvalidGrantException, match="Redirect URI mismatch"):
             handle_authorization_code(

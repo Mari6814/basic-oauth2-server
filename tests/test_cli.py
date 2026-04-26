@@ -2,6 +2,7 @@
 
 import base64
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -292,6 +293,7 @@ class TestAuthCodesPrune:
             state=None,
             code_challenge=None,
             expires_in=600,
+            consent_jti=secrets.token_urlsafe(32),
         )
         expired_code = create_authorization_code(
             db_path=db,
@@ -303,6 +305,7 @@ class TestAuthCodesPrune:
             state=None,
             code_challenge=None,
             expires_in=600,
+            consent_jti=secrets.token_urlsafe(32),
         )
         active_code = create_authorization_code(
             db_path=db,
@@ -314,6 +317,7 @@ class TestAuthCodesPrune:
             state=None,
             code_challenge=None,
             expires_in=600,
+            consent_jti=secrets.token_urlsafe(32),
         )
 
         with get_session(db) as session:
@@ -350,6 +354,7 @@ class TestAuthCodesPrune:
             state=None,
             code_challenge=None,
             expires_in=600,
+            consent_jti=secrets.token_urlsafe(32),
         )
 
         capsys.readouterr()

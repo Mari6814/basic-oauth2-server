@@ -151,6 +151,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         state: str = claims.state
         scope_str: str | None = claims.scope
         audience: str | None = claims.audience
+        jti: str = claims.jti
 
         db_user = get_user(config.db_path, user.username)
         if not db_user or not db_user.verify_password(user.password):
@@ -176,6 +177,7 @@ def create_app(config: ServerConfig) -> FastAPI:
             state=state,
             username=username,
             config=config,
+            consent_jti=jti,
         )
         return RedirectResponse(url=redirect_url, status_code=302)
 
