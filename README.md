@@ -723,10 +723,11 @@ export OAUTH_EDDSA_KEY_ID="eddsa-prod-2026"
 basic-oauth2-server serve
 ```
 
-## Future Work
+## Future Work / TODO
 
-- Token revocation endpoint (though that only makes sense when using opaque tokens instead of JWTs)
-- Refresh token grant type
+- Token revocation lists
+- Refactor invalid_audience entirely. The audience should be determined by the client and not be selection when creating the token. instead of letting the client request an audience, we will simply add all audiences recorded in the application to the JWT.
+- Refresh code flow 
 
 ## License
 
