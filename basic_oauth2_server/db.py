@@ -71,7 +71,9 @@ class Client(TimestampMixin, Base):
     # Comma-separated list of allowed audiences
     audiences: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Timestamp of last token issuance
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Comma-separated list of authorized redirect URIs for authorization code flow
     redirect_uris: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -178,7 +180,9 @@ class AuthorizationCode(TimestampMixin, Base):
     code_challenge_method: Mapped[str] = mapped_column(
         String(10), default="S256", nullable=False
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
