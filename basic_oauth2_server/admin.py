@@ -368,5 +368,9 @@ def run_admin(config: AdminConfig) -> None:
     ensure_app_key()
 
     app = create_admin_app(config)
-    auth = (config.auth_user, config.auth_password) if config.auth_user and config.auth_password else None
+    auth = (
+        (config.auth_user, config.auth_password)
+        if config.auth_user and config.auth_password
+        else None
+    )
     app.launch(server_name=config.host, server_port=config.port, auth=auth)
