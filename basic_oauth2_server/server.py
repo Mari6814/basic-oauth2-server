@@ -6,6 +6,8 @@ from typing import Annotated
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 
 from basic_oauth2_server.config import ServerConfig
@@ -40,6 +42,16 @@ def create_app(config: ServerConfig) -> FastAPI:
     """Create the FastAPI application with the given configuration."""
     app = FastAPI(title="Basic OAuth Server", version="0.1.0")
     app.state.config = config
+
+    class TokenCacheControlMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next) -> Response:
+            response = await call_next(request)
+            if request.url.path == "/oauth2/token":
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+            return response
+
+    app.add_middleware(TokenCacheControlMiddleware)
     init_db(config.db_path)
     jwks_document = build_jwks(config)
     logger.info("OAuth server initialized with db: %s", config.db_path)
