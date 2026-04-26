@@ -308,6 +308,16 @@ def main(args: list[str] | None = None) -> int:
         default=os.environ.get("OAUTH_ADMIN_HOST", "localhost"),
         help="Host to bind to (default: localhost)",
     )
+    admin_parser.add_argument(
+        "--auth-user",
+        default=os.environ.get("OAUTH_ADMIN_AUTH_USER"),
+        help="Username for basic authentication (requires --auth-password). Leave empty to disable authentication. The admin ui in its entirety is only there for development purposes and should nver be exposed.",
+    )
+    admin_parser.add_argument(
+        "--auth-password",
+        default=os.environ.get("OAUTH_ADMIN_AUTH_PASSWORD"),
+        help="Password for basic authentication. Leave empty to be prompted when --auth-user is set.",
+    )
 
     parsed = parser.parse_args(args)
 
@@ -676,14 +686,28 @@ def _cmd_admin(args: argparse.Namespace) -> int:
         )
         return 1
 
+    auth_user = args.auth_user
+    auth_password = args.auth_password
+    if auth_user and not auth_password:
+        auth_password = getpass.getpass(f"Admin password for '{auth_user}': ")
+
     config = AdminConfig(
         app_url=args.app_url,
         host=args.host,
         port=args.port,
         db_path=args.db,
+        auth_user=auth_user,
+        auth_password=auth_password,
     )
 
-    print(f"Starting admin dashboard on {config.host}:{config.port}")
+    if config.auth_user:
+        print(
+            f"Starting admin dashboard on {config.host}:{config.port} (authentication enabled)"
+        )
+    else:
+        print(
+            f"Starting admin dashboard on {config.host}:{config.port} (no authentication — keep bound to localhost)"
+        )
     run_admin(config)
     return 0
 

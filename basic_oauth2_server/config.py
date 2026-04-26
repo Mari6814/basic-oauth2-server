@@ -107,6 +107,8 @@ class AdminConfig:
     host: str = "localhost"
     port: int = 8081
     db_path: str = "./oauth.db"
+    auth_user: str | None = None
+    auth_password: str | None = None
 
     @classmethod
     def from_env(cls) -> Self:
@@ -116,6 +118,8 @@ class AdminConfig:
             host=os.environ.get("OAUTH_ADMIN_HOST", "localhost"),
             port=int(os.environ.get("OAUTH_ADMIN_PORT", "8081")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
+            auth_user=os.environ.get("OAUTH_ADMIN_AUTH_USER"),
+            auth_password=os.environ.get("OAUTH_ADMIN_AUTH_PASSWORD"),
         )
 
 

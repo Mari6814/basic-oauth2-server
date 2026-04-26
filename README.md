@@ -476,12 +476,15 @@ Start the optional admin dashboard for managing clients via a web UI.
 basic-oauth2-server admin [options]
 ```
 
-| Option   | Environment Variable | Default     | Description                                           |
-| -------- | -------------------- | ----------- | ----------------------------------------------------- |
-| `--port` | `OAUTH_ADMIN_PORT`   | `8081`      | Port for admin dashboard                              |
-| `--host` | `OAUTH_ADMIN_HOST`   | `localhost` | Host address (localhost only by default for security) |
+| Option            | Environment Variable        | Default     | Description                                                              |
+| ----------------- | --------------------------- | ----------- | ------------------------------------------------------------------------ |
+| `--port`          | `OAUTH_ADMIN_PORT`          | `8081`      | Port for admin dashboard                                                 |
+| `--host`          | `OAUTH_ADMIN_HOST`          | `localhost` | Host address (`localhost` only by default)                               |
+| `--auth-user`     | `OAUTH_ADMIN_AUTH_USER`     | *(none)*    | Enable built-in HTTP authentication with this username                   |
+| `--auth-password` | `OAUTH_ADMIN_AUTH_PASSWORD` | *(none)*    | Password for built-in authentication (prompted securely if not provided) |
 
 > **Security notice:** You should not host the admin dashboard openly. Keep it bound to localhost and only access it via the same machine.
+
 
 ## Token Endpoint
 
