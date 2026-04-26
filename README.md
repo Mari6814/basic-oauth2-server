@@ -481,6 +481,8 @@ basic-oauth2-server admin [options]
 | `--port` | `OAUTH_ADMIN_PORT`   | `8081`      | Port for admin dashboard                              |
 | `--host` | `OAUTH_ADMIN_HOST`   | `localhost` | Host address (localhost only by default for security) |
 
+> **Security notice:** You should not host the admin dashboard openly. Keep it bound to localhost and only access it via the same machine.
+
 ## Token Endpoint
 
 ### POST /oauth2/token
