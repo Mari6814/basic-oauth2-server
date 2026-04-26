@@ -274,6 +274,7 @@ Commands:
   serve       Start the OAuth authorization server
   clients     Manage OAuth clients (create, list, delete)
   users       Manage users (create, list, delete, update-password)
+  auth-codes  Manage authorization codes (prune)
   admin       Start the admin dashboard server
 ```
 
@@ -484,6 +485,19 @@ basic-oauth2-server admin [options]
 | `--auth-password` | `OAUTH_ADMIN_AUTH_PASSWORD` | *(none)*    | Password for built-in authentication (prompted securely if not provided) |
 
 > **Security notice:** You should not host the admin dashboard openly. Keep it bound to localhost and only access it via the same machine.
+
+### auth-codes
+
+Manage persisted authorization codes.
+
+```bash
+# Delete used and expired authorization codes from the authorization_codes table
+basic-oauth2-server auth-codes prune
+```
+
+| Subcommand | Description                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `prune`    | Deletes rows in `authorization_codes` where `used = TRUE` or `expires_at` is in the past. |
 
 
 ## Token Endpoint

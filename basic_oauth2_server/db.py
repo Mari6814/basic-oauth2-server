@@ -14,9 +14,13 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    delete,
+    func,
     Index,
     event,
+    select,
     update,
+    or_,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -239,6 +243,23 @@ def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
     """Retrieve an authorization code record by code."""
     with get_session(db_path) as session:
         return session.get(AuthorizationCode, code)
+
+
+def prune_authorization_codes(db_path: str) -> int:
+    """Delete used or expired authorization code rows and return count."""
+    now = datetime.now(timezone.utc)
+    prune_predicate = or_(
+        AuthorizationCode.used.is_(True),
+        AuthorizationCode.expires_at < now,
+    )
+
+    with get_session(db_path) as session:
+        deleted_count = session.scalar(
+            select(func.count()).select_from(AuthorizationCode).where(prune_predicate)
+        )
+        session.execute(delete(AuthorizationCode).where(prune_predicate))
+        session.commit()
+        return int(deleted_count or 0)
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):

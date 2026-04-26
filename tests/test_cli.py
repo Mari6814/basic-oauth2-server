@@ -2,6 +2,7 @@
 
 import base64
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +11,10 @@ from pytest import CaptureFixture
 
 from basic_oauth2_server.cli import main
 from basic_oauth2_server.db import (
+    AuthorizationCode,
+    create_authorization_code,
     get_client,
+    get_session,
     get_user,
     init_db,
     list_clients,
@@ -271,6 +275,92 @@ class TestUsersUpdatePassword:
 
     def test_no_users_subcommand_returns_1(self, db: str) -> None:
         result = main(["--db", db, "users"])
+        assert result == 1
+
+
+class TestAuthCodesPrune:
+    def test_prune_deletes_used_and_expired_rows(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        used_code = create_authorization_code(
+            db_path=db,
+            client_id="client-a",
+            user_id="user-a",
+            redirect_uri=None,
+            scope="read",
+            audience=None,
+            state=None,
+            code_challenge=None,
+            expires_in=600,
+        )
+        expired_code = create_authorization_code(
+            db_path=db,
+            client_id="client-b",
+            user_id="user-b",
+            redirect_uri=None,
+            scope="read",
+            audience=None,
+            state=None,
+            code_challenge=None,
+            expires_in=600,
+        )
+        active_code = create_authorization_code(
+            db_path=db,
+            client_id="client-c",
+            user_id="user-c",
+            redirect_uri=None,
+            scope="read",
+            audience=None,
+            state=None,
+            code_challenge=None,
+            expires_in=600,
+        )
+
+        with get_session(db) as session:
+            used = session.get(AuthorizationCode, used_code)
+            expired = session.get(AuthorizationCode, expired_code)
+            assert used is not None
+            assert expired is not None
+            used.used = True
+            expired.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+            session.commit()
+
+        capsys.readouterr()
+        result = main(["--db", db, "auth-codes", "prune"])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Pruned 2 authorization code rows." in out
+
+        with get_session(db) as session:
+            assert session.get(AuthorizationCode, used_code) is None
+            assert session.get(AuthorizationCode, expired_code) is None
+            assert session.get(AuthorizationCode, active_code) is not None
+
+    def test_prune_with_no_matching_rows(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        create_authorization_code(
+            db_path=db,
+            client_id="client-active",
+            user_id="user-active",
+            redirect_uri=None,
+            scope="read",
+            audience=None,
+            state=None,
+            code_challenge=None,
+            expires_in=600,
+        )
+
+        capsys.readouterr()
+        result = main(["--db", db, "auth-codes", "prune"])
+        assert result == 0
+        assert "Pruned 0 authorization code rows." in capsys.readouterr().out
+
+    def test_no_auth_codes_subcommand_returns_1(
+        self, db: str, capsys: CaptureFixture[str]
+    ) -> None:
+        result = main(["--db", db, "auth-codes"])
         assert result == 1
 
 

@@ -23,6 +23,7 @@ from .db import (
     list_users,
     update_user_password,
     get_client,
+    prune_authorization_codes,
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 from basic_oauth2_server.utils import decode_prefixed_utf8
@@ -295,6 +296,18 @@ def main(args: list[str] | None = None) -> int:
         help="Leave empty to prompt securely. This option is for automation use cases.",
     )
 
+    # auth-codes commands
+    auth_codes_parser = subparsers.add_parser(
+        "auth-codes", help="Manage authorization codes"
+    )
+    auth_codes_subparsers = auth_codes_parser.add_subparsers(
+        dest="auth_codes_command", help="Authorization code commands"
+    )
+
+    _auth_codes_prune_parser = auth_codes_subparsers.add_parser(
+        "prune", help="Delete used and expired authorization codes"
+    )
+
     # admin command
     admin_parser = subparsers.add_parser("admin", help="Start the admin dashboard")
     admin_parser.add_argument(
@@ -333,6 +346,8 @@ def main(args: list[str] | None = None) -> int:
         return _cmd_clients(parsed)
     elif parsed.command == "users":
         return _cmd_users(parsed)
+    elif parsed.command == "auth-codes":
+        return _cmd_auth_codes(parsed)
     elif parsed.command == "admin":
         return _cmd_admin(parsed)
 
@@ -667,6 +682,21 @@ def _cmd_users_update_password(args: argparse.Namespace) -> int:
         return 0
     print(f"Error: User '{args.username}' not found", file=sys.stderr)
     return 1
+
+
+def _cmd_auth_codes(args: argparse.Namespace) -> int:
+    """Handle the 'auth-codes' command."""
+    if not args.auth_codes_command:
+        print("Usage: basic-oauth2-server auth-codes {prune}")
+        return 1
+
+    if args.auth_codes_command == "prune":
+        deleted = prune_authorization_codes(args.db)
+        noun = "row" if deleted == 1 else "rows"
+        print(f"Pruned {deleted} authorization code {noun}.")
+        return 0
+
+    return 0
 
 
 def _ensure_utc(dt: datetime) -> datetime:
