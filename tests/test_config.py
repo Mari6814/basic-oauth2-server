@@ -186,6 +186,30 @@ class TestServerConfigFromEnv:
         assert config.rsa_private_key == "my-rsa-key"
         assert config.token_expires_in == 7200
 
+    def test_rejects_non_absolute_app_url(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env rejects APP_URL values that are not absolute URIs."""
+        monkeypatch.setenv("APP_URL", "/relative/path")
+        with pytest.raises(ValueError, match="absolute URI"):
+            ServerConfig.from_env()
+
+    @pytest.mark.parametrize(
+        "app_url",
+        ["https://auth.example.com", "http://localhost:8080", "https://example.com/oauth2"],
+    )
+    def test_accepts_absolute_app_url(self, app_url: str) -> None:
+        """Direct construction accepts valid absolute URLs."""
+        config = ServerConfig(app_url=app_url)
+        assert config.app_url == app_url
+
+    @pytest.mark.parametrize(
+        "app_url",
+        ["", " ", "https://example.com ", "example.com", "/oauth"],
+    )
+    def test_rejects_invalid_app_url(self, app_url: str) -> None:
+        """Direct construction rejects malformed or non-absolute URIs."""
+        with pytest.raises(ValueError, match="app_url"):
+            ServerConfig(app_url=app_url)
+
 
 class TestAdminConfigFromEnv:
     def test_defaults_when_no_env_vars(self, monkeypatch: MonkeyPatch) -> None:
@@ -209,6 +233,12 @@ class TestAdminConfigFromEnv:
         assert config.host == "0.0.0.0"
         assert config.port == 9090
         assert config.db_path == "/data/admin.db"
+
+    def test_rejects_non_absolute_app_url(self, monkeypatch: MonkeyPatch) -> None:
+        """from_env rejects APP_URL values that are not absolute URIs."""
+        monkeypatch.setenv("APP_URL", "relative")
+        with pytest.raises(ValueError, match="absolute URI"):
+            AdminConfig.from_env()
 
 
 class TestEnsureAppKey:

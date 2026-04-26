@@ -4,11 +4,25 @@ import os
 import base64
 import secrets
 import sys
+from urllib.parse import urlparse
 from typing import Self
 from dataclasses import dataclass
 from functools import cache
 from jws_algorithms import AsymmetricAlgorithm
 from .utils import decode_prefixed_utf8
+
+
+def _validate_app_url(app_url: str | None) -> None:
+    """Validate that app_url, when provided, is an absolute URI."""
+    if app_url is None:
+        return
+
+    if app_url != app_url.strip() or not app_url:
+        raise ValueError("app_url must be a non-empty absolute URI")
+
+    parsed = urlparse(app_url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"app_url must be an absolute URI, got: {app_url!r}")
 
 
 @dataclass(frozen=True)
@@ -33,6 +47,10 @@ class ServerConfig:
     eddsa_key_id: str | None = None
     # Token expiry in seconds (default: 3600 = 1 hour)
     token_expires_in: int = 3600
+
+    def __post_init__(self) -> None:
+        """Validate fields that affect token claim correctness."""
+        _validate_app_url(self.app_url)
 
     @cache
     def load_private_key(
@@ -109,6 +127,10 @@ class AdminConfig:
     db_path: str = "./oauth.db"
     auth_user: str | None = None
     auth_password: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate app_url for generated links and callbacks."""
+        _validate_app_url(self.app_url)
 
     @classmethod
     def from_env(cls) -> Self:
