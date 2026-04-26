@@ -632,6 +632,36 @@ def test_token_endpoint_missing_credentials(client_with_db: TestClient) -> None:
     assert response.json()["error"] == "invalid_client"
 
 
+def test_token_endpoint_cache_control_headers_on_success(
+    client_with_db: TestClient,
+) -> None:
+    """Token responses must carry Cache-Control: no-store."""
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
+def test_token_endpoint_cache_control_headers_on_error(
+    client_with_db: TestClient,
+) -> None:
+    """Error responses from the token endpoint must also carry Cache-Control: no-store."""
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={"grant_type": "client_credentials"},
+        headers=_basic_auth_header("test-client", b64("wrong-secret")),
+    )
+
+    assert response.status_code == 401
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["Pragma"] == "no-cache"
+
+
 def _pkce_pair() -> tuple[str, str]:
     """Generate a PKCE code_verifier and S256 code_challenge."""
     verifier = secrets.token_urlsafe(48)
