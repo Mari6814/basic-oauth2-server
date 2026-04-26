@@ -4,6 +4,7 @@ import base64
 import bcrypt
 from functools import lru_cache
 import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
 import secrets
 
@@ -54,7 +55,7 @@ class Client(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # The unique client identifier (public). This is the "username" for a client itself (not the user)
     client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
-    # SHA256 hexdigest of client secret - the "password" used to obtain access tokens
+    # HMAC-SHA256 (keyed with APP_KEY) of client secret - the "password" used to obtain access tokens
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Algorithm to use for signing (HS256, RS256, EdDSA, etc.)
     # The client chooses based on their verification capabilities
@@ -89,15 +90,14 @@ class Client(TimestampMixin, Base):
                 user_secret = base64.b64decode(user_secret, validate=True)
             except Exception:
                 return False
-        if secrets.compare_digest(
-            self.client_secret, hashlib.sha256(user_secret).hexdigest()
-        ):
+        mac = hmac.digest(get_app_key(), user_secret, "sha256").hex()
+        if hmac.compare_digest(self.client_secret, mac):
             return True
         return False
 
     def set_secret(self, secret: bytes) -> None:
-        """Hash and store the client secret using SHA256."""
-        self.client_secret = hashlib.sha256(secret).hexdigest()
+        """Compute and store HMAC-SHA256 of the client secret keyed with APP_KEY."""
+        self.client_secret = hmac.digest(get_app_key(), secret, "sha256").hex()
 
     def get_signing_secret(self) -> bytes | None:
         """Decrypt and return the signing secret (for HMAC algorithms)."""
