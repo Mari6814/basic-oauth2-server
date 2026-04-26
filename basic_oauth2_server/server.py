@@ -6,9 +6,6 @@ from typing import Annotated
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
-
 
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import get_user, init_db
@@ -19,6 +16,10 @@ from basic_oauth2_server.exceptions import (
     OAuth2Exception,
 )
 from basic_oauth2_server.jwks import build_jwks
+from basic_oauth2_server.middleware import (
+    RateLimitMiddleware,
+    TokenCacheControlMiddleware,
+)
 from .consent_token import (
     verify_consent_token,
 )
@@ -43,15 +44,9 @@ def create_app(config: ServerConfig) -> FastAPI:
     app = FastAPI(title="Basic OAuth Server", version="0.1.0")
     app.state.config = config
 
-    class TokenCacheControlMiddleware(BaseHTTPMiddleware):
-        async def dispatch(self, request: Request, call_next) -> Response:
-            response = await call_next(request)
-            if request.url.path == "/oauth2/token":
-                response.headers["Cache-Control"] = "no-store"
-                response.headers["Pragma"] = "no-cache"
-            return response
-
+    # Add middlewares in correct order (rate limit before cache control)
     app.add_middleware(TokenCacheControlMiddleware)
+    app.add_middleware(RateLimitMiddleware)
     init_db(config.db_path)
     jwks_document = build_jwks(config)
     logger.info("OAuth server initialized with db: %s", config.db_path)
