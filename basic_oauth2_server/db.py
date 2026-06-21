@@ -119,12 +119,14 @@ class Client(TimestampMixin, Base):
 
     def get_scopes_list(self) -> list[str]:
         """Return scopes as a list."""
+        # TODO (missing test): the `return []` branch (scopes is None/empty) is not tested.
         if not self.scopes:
             return []
         return [s.strip() for s in self.scopes.split(",") if s.strip()]
 
     def get_audiences_list(self) -> list[str]:
         """Return audiences as a list."""
+        # TODO (missing test): the `return []` branch (audiences is None/empty) is not tested.
         if not self.audiences:
             return []
         return [a.strip() for a in self.audiences.split(",") if a.strip()]
@@ -140,6 +142,8 @@ class Client(TimestampMixin, Base):
         secret = self.get_signing_secret()
         if not secret:
             return None
+        # TODO (missing test): the `return f"sha256:..."` branch (client has a signing
+        # secret) is not covered by test_db.py.
         return f"sha256:{hashlib.sha256(secret).hexdigest()}"
 
 

@@ -53,6 +53,12 @@ class InvalidAudienceException(OAuth2Exception):
     The audience can be invalid because it is not set up in the client model being used.
     """
 
+    # TODO (non-standard): "invalid_audience" is not a valid OAuth 2.0 error code.
+    # Maybe we don't even need audiences to be configurable? We do need audiences
+    # somewhere as our access token is a JWT, but maybe we do not allow the audiences
+    # to be configured by the auth request, and instead just use the audiences as they
+    # are configured in the client model. If your client needs different audiences,
+    # you should just make different clients.
     def __init__(self, description: str | None = None, status_code: int = 400):
         super().__init__("invalid_audience", description, status_code)
 
