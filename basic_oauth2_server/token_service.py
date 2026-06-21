@@ -68,4 +68,4 @@ def create_client_refresh_token(
     server: ServerConfig,
 ):
     # TODO (missing feature): Refresh tokens are not implemented yet.
-    throw NotImplementedError("Refresh token creation is not implemented yet")
+    pass
