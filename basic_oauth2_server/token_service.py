@@ -67,5 +67,5 @@ def create_access_token_for_client(
 def create_client_refresh_token(
     server: ServerConfig,
 ):
-    # TODO: implement refresh token creation when we need it for auth code flow
-    pass
+    # TODO (missing feature): Refresh tokens are not implemented yet.
+    throw NotImplementedError("Refresh token creation is not implemented yet")

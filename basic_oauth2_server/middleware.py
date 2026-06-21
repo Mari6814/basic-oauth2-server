@@ -21,6 +21,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only rate limit specific endpoints
         if request.url.path in self.RATE_LIMITED_PATHS:
+            # TODO (non-standard/security): X-Forwarded-For is missing a
+            # configuration. There should be a setting to just blanked
+            # enable/disable it. Reason: We assume for simplicity that
+            # if we are behind a proxy, it will always set X-Forwarded-For,
+            # and if we are, the only way this authorization server can be
+            # accessed is through that proxy, so it should be safe.
             forwarded_for = request.headers.get("x-forwarded-for")
             client_ip = (
                 forwarded_for.split(",")[0].strip()

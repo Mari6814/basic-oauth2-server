@@ -59,6 +59,9 @@ class ServerConfig:
         """
         Load the appropriate private key and key ID for the given algorithm.
 
+        I know that this method keeps the secret in-memory, but tihs is a dev
+        tool and I want to keep it simple, so its fine.
+
         Returns:
             (private_key_bytes, key_id)
         """
@@ -171,6 +174,10 @@ def get_app_key() -> bytes:
     if not key:
         raise ValueError("APP_KEY environment variable is required")
 
+    # TODO (bug?): I guess that there might be potential for confusion
+    # if somebody tries to use a raw string that happens to be base64,
+    # but I don't think that its worth my time. I'll think about if I
+    # want to handle this better.
     try:
         key_bytes = base64.b64decode(key)
     except Exception:

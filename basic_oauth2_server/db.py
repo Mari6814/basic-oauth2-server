@@ -89,6 +89,8 @@ class Client(TimestampMixin, Base):
         Returns:
             bool: True if the provided secret is correct, False otherwise.
         """
+        # TODO (bug): There might be a bug related to urlencoded secrets usually
+        # sent by browsers. In that case base64 is not correct. Need to investigate.
         if not self.client_secret:
             return False
         if isinstance(user_secret, str):
@@ -151,6 +153,9 @@ class User(TimestampMixin, Base):
 
     def set_password(self, password: str) -> None:
         """Hash and store the password using bcrypt."""
+        # TODO (minor): bcrypt silently truncates passwords longer than 72 bytes.
+        # Need to research what i can do. Maybe hash before encode and
+        # hash before verify_password?
         self.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
     def verify_password(self, password: str) -> bool:
@@ -210,6 +215,9 @@ def create_authorization_code(
     if not consent_jti:
         raise ValueError("consent_jti is required to create an authorization code")
 
+    # TODO (bug): Replaying a consent token hits the UNIQUE(consent_jti) and
+    # results in 500 error. It's blocked but i should properly handle the request
+    # in OAuth-style response.
     with get_session(db_path) as session:
         auth_code = AuthorizationCode(
             code=code,
@@ -257,6 +265,9 @@ def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
 
 def prune_authorization_codes(db_path: str) -> int:
     """Delete used or expired authorization code rows and return count."""
+    # TODO (missing): Pruning is manual (the `auth-codes prune` CLI command).
+    # I should just run prune every request? I guess that would not be secure
+    # but better than setting up a separate cron or background thread...
     now = datetime.now(timezone.utc)
     prune_predicate = or_(
         AuthorizationCode.used.is_(True),
@@ -303,6 +314,8 @@ def get_engine(db_path: str):
 def get_sessionmaker(db_path: str):
     """Create and cache a sessionmaker, initializing the DB schema on first call."""
     engine = get_engine(db_path)
+    # No migrations, if there ever should be updates, I have to re-create.
+    # This is just a simple tool and not intended for long-running production use.
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)
 
@@ -434,6 +447,10 @@ def update_user_password(db_path: str, username: str, new_password: str) -> bool
         if not user:
             return False
         user.set_password(new_password)
-        # TODO: Tests have shown that the updated_at timestamp is not updating. Find out what is going on.
+        # TODO: In manual tests I noticed that updated_at is not working.
+        # Reason is probably that onupdate is for sql UPDATE and not for
+        # ORM managed updates or something?
+        # TODO: Missing test verifying that updated_at works. This time,
+        # test with `>` and not `>=` to make sure the time actually advances.
         session.commit()
         return True

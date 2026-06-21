@@ -75,6 +75,11 @@ def create_app(config: ServerConfig) -> FastAPI:
             "server_error", "An unexpected error occurred", status_code=500
         )
 
+    # TODO: Read about /.well-known/oauth-authorization-server for advertising endpoints.
+    # TODO: Add token revocation (maybe not? For my usecase this seems useless) endpoint?
+    # TODO: Add token introspection endpoint, that allows to verify without
+    # having the secret values available or algorithms implemented. Not sure
+    # if really useful. I'll have to read about what the standard here is.
     @app.get("/.well-known/jwks.json")
     async def jwks_endpoint() -> JSONResponse:
         """Serve the JSON Web Key Set for configured asymmetric keys."""
@@ -99,6 +104,17 @@ def create_app(config: ServerConfig) -> FastAPI:
         with a signed JWT that encodes all authorization parameters. The user
         POSTs only that token to /authorize/confirm to complete the flow.
         """
+        # TODO (non-standard): This endpoint requires HTTP Basic Auth and returns
+        # JSON instead of rendering an HTML login/consent page and redirecting.
+        # No standardized OAuth client can drive this. The Idea was that I want to
+        # keep it simple and not have a login page with sessions. But maybe its
+        # required to make it work with the standard clients I'm developing this for.
+        # TODO (non-standard): `state` is declared required here. Have to document that this is on purpose and to simplify things, we always require state. I'm pretty sure that
+        # most providers also require it. Might have to read up on how they handle
+        # missing state?
+        # TODO (non-standard): Authorization errors (bad scope,
+        # invalid audience, etc.) are raised as JSON. When redirect_uri is valid
+        # and registered, errors should 302 back to the client with ?error=...
         if response_type != "code":
             raise InvalidRequestException("Unsupported response_type")
 
@@ -196,12 +212,22 @@ def create_app(config: ServerConfig) -> FastAPI:
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
+        # TODO (non-standard): Some fields that are declared as required
+        # like `grant_type` will result in `422 {"detail":[...]}` body
+        # instead of OAuth-shaped `400 {"error":"invalid_request"}` response.
+        # Need to make all parameters optional and validate manually so
+        # every error follows the OAuth error contract.
         effective_client_id = (
             client_credentials.username if client_credentials else client_id
         )
         effective_client_secret = (
             client_credentials.password if client_credentials else client_secret
         )
+        # TODO (non-standard): PKCE apparently does not require a client_secret?
+        # Need to verify if there are flows that need client_secret, or if
+        # all authorization_code flows only need the verifier. In this
+        # basic implementation I want to keep it simple and only implement
+        # one flavor if there are multiple.
         if not effective_client_id or not effective_client_secret:
             raise InvalidClientException(
                 "Client authentication failed: missing credentials"

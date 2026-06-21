@@ -65,6 +65,9 @@ def create_jwt(
     header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
 
     # Create payload
+    # TODO (bug): This mutates the caller's `claims` dict in place
+    # (exp/iat/jti). Harmless in this codebase, but I probably should
+    # just copy the input.
     if expires_in is not None:
         claims["exp"] = int(time.time()) + expires_in
     if "iat" not in claims:
@@ -134,6 +137,11 @@ def create_access_token(
     if scopes:
         claims["scope"] = " ".join(scopes)
 
+    # TODO (missing feature): Support list-valued `aud`. `aud` is a single string.
+    # JWT allows an array of audiences. I think I initially wrote this in the
+    # README. Need to read up on if that is actually something I should do,
+    # and how much complexity it adds. I can't remember, but I think I removed
+    # multi-aud already once?
     if audience:
         claims["aud"] = audience
 
