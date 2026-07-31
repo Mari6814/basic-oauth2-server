@@ -48,7 +48,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     # Add middlewares in correct order (rate limit before cache control)
     app.add_middleware(TokenCacheControlMiddleware)
-    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RateLimitMiddleware, trust_proxy=config.trust_proxy)
     init_db(config.db_path)
     jwks_document = build_jwks(config)
     logger.info("OAuth server initialized with db: %s", config.db_path)

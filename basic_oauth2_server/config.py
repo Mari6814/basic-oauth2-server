@@ -32,7 +32,10 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 8080
     db_path: str = "./oauth.db"
-    app_url: str = "http://localhost:8080"  # Issuer URL for JWT 'iss' claim
+    # Used for rate-limiting behind proxy. When enabled, will trust any and all X-Forwarded-For headers. Make sure the header runs behind a proxy.
+    trust_proxy: bool = False
+    # Issuer URL for JWT 'iss' claim
+    app_url: str = "http://localhost:8080"
     # Private keys for asymmetric algorithms (each algorithm family needs its own key)
     rsa_private_key: str | None = None  # For RS256, RS384, RS512, PS256, PS384, PS512
     ec_p256_private_key: str | None = None  # For ES256
@@ -105,6 +108,8 @@ class ServerConfig:
             host=os.environ.get("OAUTH_HOST", "localhost"),
             port=int(os.environ.get("OAUTH_PORT", "8080")),
             db_path=os.environ.get("OAUTH_DB_PATH", "./oauth.db"),
+            trust_proxy=os.environ.get("OAUTH_TRUST_PROXY", "").lower()
+            in ("1", "true", "yes"),
             app_url=os.environ.get("APP_URL", "http://localhost:8080"),
             rsa_private_key=os.environ.get("OAUTH_RSA_PRIVATE_KEY"),
             ec_p256_private_key=os.environ.get("OAUTH_EC_P256_PRIVATE_KEY"),

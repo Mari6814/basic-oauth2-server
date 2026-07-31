@@ -14,20 +14,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     RATE_LIMITED_PATHS = {"/oauth2/token", "/authorize", "/authorize/confirm"}
 
-    def __init__(self, app: ASGIApp, rate_limiter: RateLimiter | None = None) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        rate_limiter: RateLimiter | None = None,
+        trust_proxy: bool = False,
+    ) -> None:
         super().__init__(app)
         self._limiter = rate_limiter or RateLimiter()
+        self._trust_proxy = trust_proxy
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Only rate limit specific endpoints
         if request.url.path in self.RATE_LIMITED_PATHS:
-            # TODO (non-standard/security): X-Forwarded-For is missing a
-            # configuration. There should be a setting to just blanked
-            # enable/disable it. Reason: We assume for simplicity that
-            # if we are behind a proxy, it will always set X-Forwarded-For,
-            # and if we are, the only way this authorization server can be
-            # accessed is through that proxy, so it should be safe.
-            forwarded_for = request.headers.get("x-forwarded-for")
+            forwarded_for = (
+                request.headers.get("x-forwarded-for") if self._trust_proxy else None
+            )
             client_ip = (
                 forwarded_for.split(",")[0].strip()
                 if forwarded_for

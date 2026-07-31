@@ -11,11 +11,17 @@ from basic_oauth2_server.middleware import (
 from basic_oauth2_server.rate_limiter import RateLimiter
 
 
-def _make_app_with_rate_limit(requests_per_minute: int = 5) -> FastAPI:
+def _make_app_with_rate_limit(
+    requests_per_minute: int = 5, trust_proxy: bool = False
+) -> FastAPI:
     """Create a minimal app with RateLimitMiddleware for testing."""
     app = FastAPI()
     limiter = RateLimiter(requests_per_minute=requests_per_minute)
-    app.add_middleware(RateLimitMiddleware, rate_limiter=limiter)
+    app.add_middleware(
+        RateLimitMiddleware,
+        rate_limiter=limiter,
+        trust_proxy=trust_proxy,
+    )
 
     @app.get("/oauth2/token")
     async def token():
@@ -103,20 +109,28 @@ class TestRateLimitMiddleware:
             not in tight_rate_limit_client.get("/not-rate-limited").headers
         )
 
-    def test_uses_x_forwarded_for(self, tight_rate_limit_client: TestClient):
-        tight_rate_limit_client.get(
-            "/oauth2/token", headers={"x-forwarded-for": "10.0.0.1"}
-        )
-        response = tight_rate_limit_client.get(
-            "/oauth2/token", headers={"x-forwarded-for": "10.0.0.1"}
-        )
+    def test_ignores_x_forwarded_for_by_default(self) -> None:
+        client = TestClient(_make_app_with_rate_limit(requests_per_minute=1))
+        client.get("/oauth2/token", headers={"x-forwarded-for": "10.0.0.1"})
+        response = client.get("/oauth2/token", headers={"x-forwarded-for": "10.0.0.2"})
         assert response.status_code == 429
 
-    def test_x_forwarded_for_uses_first_ip(self, tight_rate_limit_client: TestClient):
-        tight_rate_limit_client.get(
+    def test_uses_x_forwarded_for_when_trusted(self) -> None:
+        client = TestClient(
+            _make_app_with_rate_limit(requests_per_minute=1, trust_proxy=True)
+        )
+        client.get("/oauth2/token", headers={"x-forwarded-for": "10.0.0.1"})
+        response = client.get("/oauth2/token", headers={"x-forwarded-for": "10.0.0.2"})
+        assert response.status_code == 200
+
+    def test_x_forwarded_for_uses_first_ip(self) -> None:
+        client = TestClient(
+            _make_app_with_rate_limit(requests_per_minute=1, trust_proxy=True)
+        )
+        client.get(
             "/oauth2/token", headers={"x-forwarded-for": "10.0.0.1, 192.168.1.1"}
         )
-        response = tight_rate_limit_client.get(
+        response = client.get(
             "/oauth2/token", headers={"x-forwarded-for": "10.0.0.1, 172.16.0.1"}
         )
         assert response.status_code == 429
