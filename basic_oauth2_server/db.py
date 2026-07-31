@@ -457,10 +457,7 @@ def update_user_password(db_path: str, username: str, new_password: str) -> bool
         if not user:
             return False
         user.set_password(new_password)
-        # TODO: In manual tests I noticed that updated_at is not working.
-        # Reason is probably that onupdate is for sql UPDATE and not for
-        # ORM managed updates or something?
-        # TODO: Missing test verifying that updated_at works. This time,
-        # test with `>` and not `>=` to make sure the time actually advances.
+        # TODO: I don't get why updated_at doens't work automatically... I'll add it for now, but it makes no sense to me
+        user.updated_at = datetime.now(timezone.utc)
         session.commit()
         return True

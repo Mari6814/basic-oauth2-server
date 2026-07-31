@@ -306,6 +306,21 @@ class TestUser:
         assert user.verify_password("new-pw") is True
         assert user.verify_password("old-pw") is False
 
+    def test_update_user_password_advances_updated_at(self, db_path: str) -> None:
+        """update_user_password advances updated_at when the password changes."""
+        create_user(db_path, "heidi", "old-pw")
+        user = get_user(db_path, "heidi")
+        assert user is not None
+        original_updated_at = _ensure_utc(user.updated_at)
+
+        time.sleep(0.01)
+
+        assert update_user_password(db_path, "heidi", "new-pw") is True
+
+        updated_user = get_user(db_path, "heidi")
+        assert updated_user is not None
+        assert _ensure_utc(updated_user.updated_at) > original_updated_at
+
     def test_update_user_password_returns_false_for_missing(self, db_path: str) -> None:
         """update_user_password returns False when the username does not exist."""
         assert update_user_password(db_path, "ghost", "pw") is False
