@@ -91,19 +91,24 @@ class Client(TimestampMixin, Base):
         Returns:
             bool: True if the provided secret is correct, False otherwise.
         """
-        # TODO (bug): There might be a bug related to urlencoded secrets usually
-        # sent by browsers. In that case base64 is not correct. Need to investigate.
         if not self.client_secret:
             return False
+
         if isinstance(user_secret, str):
             try:
-                user_secret = base64.b64decode(user_secret, validate=True)
+                decoded_secret = base64.b64decode(user_secret, validate=True)
             except Exception:
-                return False
+                decoded_secret = None
+
+            if decoded_secret is not None:
+                decoded_mac = hmac.digest(get_app_key(), decoded_secret, "sha256").hex()
+                if hmac.compare_digest(self.client_secret, decoded_mac):
+                    return True
+
+            user_secret = user_secret.encode("utf-8")
+
         mac = hmac.digest(get_app_key(), user_secret, "sha256").hex()
-        if hmac.compare_digest(self.client_secret, mac):
-            return True
-        return False
+        return hmac.compare_digest(self.client_secret, mac)
 
     def set_secret(self, secret: bytes) -> None:
         """Compute and store HMAC-SHA256 of the client secret keyed with APP_KEY."""

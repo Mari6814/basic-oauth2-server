@@ -388,6 +388,47 @@ class TestClientSecretAndSigningSecret:
         assert client is not None
         assert client.verify_client_secret(b"any-secret") is False
 
+    def test_verify_client_secret_accepts_raw_utf8_string(self, db_path: str) -> None:
+        """verify_client_secret accepts a raw string when the stored secret came from bytes."""
+        create_client(
+            db_path=db_path,
+            client_id="raw-string-secret-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"mysecret",
+        )
+        client = get_client(db_path, "raw-string-secret-client")
+        assert client is not None
+        assert client.verify_client_secret("mysecret") is True
+
+    def test_verify_client_secret_preserves_base64_string_support(
+        self, db_path: str
+    ) -> None:
+        """verify_client_secret still accepts a base64-encoded string input."""
+        secret = b"c2VjcmV0Cg=="
+        create_client(
+            db_path=db_path,
+            client_id="base64-string-secret-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=secret,
+        )
+        client = get_client(db_path, "base64-string-secret-client")
+        assert client is not None
+        assert client.verify_client_secret(base64.b64encode(secret).decode()) is True
+
+    def test_verify_client_secret_rejects_incorrect_raw_string(
+        self, db_path: str
+    ) -> None:
+        """verify_client_secret returns False for the wrong raw string."""
+        create_client(
+            db_path=db_path,
+            client_id="wrong-raw-string-secret-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"mysecret",
+        )
+        client = get_client(db_path, "wrong-raw-string-secret-client")
+        assert client is not None
+        assert client.verify_client_secret("not-mysecret") is False
+
     def test_get_signing_secret_returns_none_when_not_set(self, db_path: str) -> None:
         """get_signing_secret returns None when no signing secret has been configured."""
         create_client(
