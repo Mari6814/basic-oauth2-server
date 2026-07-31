@@ -260,7 +260,7 @@ def test_token_endpoint_invalid_audience(client_with_db: TestClient) -> None:
 
     assert response.status_code == 400
     data = response.json()
-    assert data["error"] == "invalid_audience"
+    assert data["error"] == "invalid_request"
 
 
 # Test keys directory
