@@ -1,6 +1,7 @@
 """Tests for database models and auto-managed timestamp columns."""
 
 import base64
+import hashlib
 import os
 import secrets
 import time
@@ -373,6 +374,46 @@ class TestClientRedirectUris:
         assert client.get_redirect_uris_list() == []
 
 
+class TestClientScopesAndAudiences:
+    def test_get_scopes_list_returns_empty_for_none(self) -> None:
+        """get_scopes_list returns an empty list when scopes is None."""
+        client = Client(client_id="scopes-none", title="scopes-none", algorithm="HS256")
+
+        assert client.get_scopes_list() == []
+
+    def test_get_scopes_list_returns_empty_for_empty_string(self) -> None:
+        """get_scopes_list returns an empty list when scopes is an empty string."""
+        client = Client(
+            client_id="scopes-empty",
+            title="scopes-empty",
+            algorithm="HS256",
+            scopes="",
+        )
+
+        assert client.get_scopes_list() == []
+
+    def test_get_audiences_list_returns_empty_for_none(self) -> None:
+        """get_audiences_list returns an empty list when audiences is None."""
+        client = Client(
+            client_id="audiences-none",
+            title="audiences-none",
+            algorithm="HS256",
+        )
+
+        assert client.get_audiences_list() == []
+
+    def test_get_audiences_list_returns_empty_for_empty_string(self) -> None:
+        """get_audiences_list returns an empty list when audiences is an empty string."""
+        client = Client(
+            client_id="audiences-empty",
+            title="audiences-empty",
+            algorithm="HS256",
+            audiences="",
+        )
+
+        assert client.get_audiences_list() == []
+
+
 class TestClientSecretAndSigningSecret:
     def test_verify_client_secret_returns_false_when_no_secret_stored(
         self, db_path: str
@@ -476,3 +517,23 @@ class TestClientSecretAndSigningSecret:
         client = get_client(db_path, "no-fingerprint-client")
         assert client is not None
         assert client.get_signing_secret_fingerprint() is None
+
+    def test_get_signing_secret_fingerprint_returns_sha256_digest(
+        self, db_path: str
+    ) -> None:
+        """get_signing_secret_fingerprint returns the sha256 fingerprint when set."""
+        signing_secret = b"test-signing-secret"
+        create_client(
+            db_path=db_path,
+            client_id="fingerprint-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            client_secret=b"client-secret",
+            signing_secret=signing_secret,
+        )
+        client = get_client(db_path, "fingerprint-client")
+        assert client is not None
+
+        fingerprint = client.get_signing_secret_fingerprint()
+        expected = f"sha256:{hashlib.sha256(signing_secret).hexdigest()}"
+
+        assert fingerprint == expected
