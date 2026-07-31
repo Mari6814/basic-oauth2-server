@@ -277,9 +277,6 @@ def get_authorization_code(db_path: str, code: str) -> AuthorizationCode | None:
 
 def prune_authorization_codes(db_path: str) -> int:
     """Delete used or expired authorization code rows and return count."""
-    # TODO (missing): Pruning is manual (the `auth-codes prune` CLI command).
-    # I should just run prune every request? I guess that would not be secure
-    # but better than setting up a separate cron or background thread...
     now = datetime.now(timezone.utc)
     prune_predicate = or_(
         AuthorizationCode.used.is_(True),

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,9 +16,11 @@ from basic_oauth2_server.authorization_code_grant import (
 )
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import (
+    AuthorizationCode,
     create_authorization_code,
     create_client,
     create_user,
+    get_session,
 )
 from basic_oauth2_server.exceptions import (
     AuthorizationRedirectException,
@@ -227,6 +230,73 @@ class TestHandleAuthorizationCode:
                 redirect_uri="https://evil.example.com/callback",
                 code_verifier=code_verifier,
             )
+
+    def test_successful_exchange_prunes_stale_authorization_codes(
+        self, config: ServerConfig, db_path: str
+    ) -> None:
+        code_verifier = "my-verifier-long-enough-for-s256"
+        valid_code = create_authorization_code(
+            db_path=db_path,
+            client_id="test-client",
+            user_id="testuser",
+            redirect_uri="https://example.com/callback",
+            scope="read write",
+            audience=None,
+            state=None,
+            code_challenge=_s256_challenge(code_verifier),
+            consent_jti=secrets.token_urlsafe(32),
+        )
+
+        expired_code = "expired-code"
+        used_code = "used-code"
+        with get_session(db_path) as session:
+            session.add_all(
+                [
+                    AuthorizationCode(
+                        code=expired_code,
+                        client_id="test-client",
+                        user_id="testuser",
+                        redirect_uri="https://example.com/callback",
+                        scope="read",
+                        audience=None,
+                        state=None,
+                        code_challenge=_s256_challenge("expired-verifier"),
+                        code_challenge_method="S256",
+                        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+                        used=False,
+                        consent_jti=secrets.token_urlsafe(32),
+                    ),
+                    AuthorizationCode(
+                        code=used_code,
+                        client_id="test-client",
+                        user_id="testuser",
+                        redirect_uri="https://example.com/callback",
+                        scope="read",
+                        audience=None,
+                        state=None,
+                        code_challenge=_s256_challenge("used-verifier"),
+                        code_challenge_method="S256",
+                        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+                        used=True,
+                        consent_jti=secrets.token_urlsafe(32),
+                    ),
+                ]
+            )
+            session.commit()
+
+        response = handle_authorization_code(
+            config=config,
+            client_id="test-client",
+            client_secret=b64("test-secret"),
+            code=valid_code,
+            redirect_uri="https://example.com/callback",
+            code_verifier=code_verifier,
+        )
+
+        assert response["token_type"] == "Bearer"
+        with get_session(db_path) as session:
+            assert session.get(AuthorizationCode, expired_code) is None
+            assert session.get(AuthorizationCode, used_code) is None
 
 
 class TestVerifyPkceUnsupportedMethods:

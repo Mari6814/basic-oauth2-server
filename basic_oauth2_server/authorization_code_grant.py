@@ -19,6 +19,7 @@ from .db import (
     create_authorization_code,
     consume_authorization_code,
     get_client,
+    prune_authorization_codes,
     touch_client_last_used,
 )
 
@@ -215,6 +216,7 @@ def handle_authorization_code(
     )
 
     touch_client_last_used(config.db_path, client_id)
+    prune_authorization_codes(config.db_path)
     logger.info(
         "Issued token via authorization_code for client: %s, user: %s",
         client_id,
