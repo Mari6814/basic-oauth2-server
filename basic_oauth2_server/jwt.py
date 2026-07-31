@@ -168,7 +168,7 @@ def create_access_token(
     secret: bytes | None = None,
     private_key: bytes | None = None,
     scopes: list[str] | None = None,
-    audience: str | None = None,
+    audience: str | list[str] | None = None,
     expires_in: int = 3600,
     kid: str | None = None,
     issuer: str | None = None,
@@ -205,11 +205,6 @@ def create_access_token(
     if scopes:
         claims["scope"] = " ".join(scopes)
 
-    # TODO (missing feature): Support list-valued `aud`. `aud` is a single string.
-    # JWT allows an array of audiences. I think I initially wrote this in the
-    # README. Need to read up on if that is actually something I should do,
-    # and how much complexity it adds. I can't remember, but I think I removed
-    # multi-aud already once?
     if audience:
         claims["aud"] = audience
 

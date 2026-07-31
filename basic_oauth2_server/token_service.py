@@ -14,7 +14,7 @@ def create_access_token_for_client(
     config: ServerConfig,
     client: Client,
     scopes: list[str] | None = None,
-    audience: str | None = None,
+    audience: str | list[str] | None = None,
     subject: str | None = None,
 ) -> str:
     """Create an access token for the given client and the current server config.
@@ -26,7 +26,7 @@ def create_access_token_for_client(
         config: The server configuration, used to load private keys for asymmetric algorithms.
         client: The client for which to create the access token. The client's configured algorithm and signing secret (for symmetric algorithms) will be used.
         scopes: Optional list of scopes to include in the token's "scope" claim.
-        audience: Optional audience to include in the token's "aud" claim.
+        audience: Optional audience or list of audiences to include in the token's "aud" claim.
 
     Returns:
         A signed JWT access token.
@@ -69,7 +69,7 @@ def create_refresh_token_for_client(
     client: Client,
     user_id: str,
     scopes: list[str] | None = None,
-    audience: str | None = None,
+    audience: str | list[str] | None = None,
 ) -> str:
     """Create and persist an opaque refresh token for a client and user.
 
@@ -78,7 +78,7 @@ def create_refresh_token_for_client(
         client: Client the refresh token belongs to.
         user_id: Authenticated resource owner username.
         scopes: Optional scopes tied to the refresh token.
-        audience: Optional audience tied to the refresh token.
+        audience: Optional audience or list of audiences tied to the refresh token.
 
     Returns:
         The opaque refresh token string.
@@ -88,6 +88,6 @@ def create_refresh_token_for_client(
         client_id=client.client_id,
         user_id=user_id,
         scope=" ".join(scopes) if scopes else None,
-        audience=audience,
+        audience=" ".join(audience) if isinstance(audience, list) else audience,
         expires_in=config.refresh_token_expires_in,
     )

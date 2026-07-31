@@ -121,3 +121,40 @@ def test_create_jwt_does_not_mutate_claims() -> None:
     create_jwt(original, SymmetricAlgorithm.HS256, secret=b"secret")
 
     assert original == {"sub": "client1"}
+
+
+def test_create_access_token_with_single_audience() -> None:
+    """Single string audience is set as a plain string in the aud claim."""
+    token = create_access_token(
+        subject="user1",
+        algorithm=SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        audience="https://api.example.com",
+    )
+    payload = json.loads(_b64url_decode(token.split(".")[1]))
+    assert payload["aud"] == "https://api.example.com"
+
+
+def test_create_access_token_with_list_audience() -> None:
+    """List audience is set as a JSON array in the aud claim."""
+    audiences = ["https://api.example.com", "https://other.example.com"]
+    token = create_access_token(
+        subject="user1",
+        algorithm=SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        audience=audiences,
+    )
+    payload = json.loads(_b64url_decode(token.split(".")[1]))
+    assert payload["aud"] == audiences
+
+
+def test_create_access_token_without_audience() -> None:
+    """No aud claim is set when audience is None."""
+    token = create_access_token(
+        subject="user1",
+        algorithm=SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        audience=None,
+    )
+    payload = json.loads(_b64url_decode(token.split(".")[1]))
+    assert "aud" not in payload
