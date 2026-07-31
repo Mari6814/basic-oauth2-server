@@ -203,6 +203,34 @@ class AuthorizationCode(TimestampMixin, Base):
 Index("ix_auth_codes_client_id", AuthorizationCode.client_id)
 
 
+class RefreshToken(Base):
+    """Stores opaque refresh tokens for the refresh_token grant flow."""
+
+    __tablename__ = "refresh_tokens"
+
+    token: Mapped[str] = mapped_column(String(128), primary_key=True)
+    client_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("clients.client_id"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("users.username"), nullable=False
+    )
+    scope: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audience: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+Index("ix_refresh_tokens_client_id", RefreshToken.client_id)
+Index("ix_refresh_tokens_user_id", RefreshToken.user_id)
+
+
 def create_authorization_code(
     db_path: str,
     client_id: str,
@@ -288,6 +316,126 @@ def prune_authorization_codes(db_path: str) -> int:
             select(func.count()).select_from(AuthorizationCode).where(prune_predicate)
         )
         session.execute(delete(AuthorizationCode).where(prune_predicate))
+        session.commit()
+        return int(deleted_count or 0)
+
+
+def create_refresh_token(
+    db_path: str,
+    client_id: str,
+    user_id: str,
+    scope: str | None,
+    audience: str | None,
+    expires_in: int,
+) -> str:
+    """Create and store a new refresh token.
+
+    Args:
+        db_path: Path to the database.
+        client_id: Client the token belongs to.
+        user_id: User the token belongs to.
+        scope: Space-separated scopes bound to the token.
+        audience: Audience bound to the token.
+        expires_in: Token lifetime in seconds.
+
+    Returns:
+        The opaque refresh token string.
+    """
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+    with get_session(db_path) as session:
+        session.add(
+            RefreshToken(
+                token=token,
+                client_id=client_id,
+                user_id=user_id,
+                scope=scope,
+                audience=audience,
+                expires_at=expires_at,
+            )
+        )
+        session.commit()
+
+    return token
+
+
+def consume_refresh_token(db_path: str, token: str) -> RefreshToken | None:
+    """Atomically retrieve and delete a refresh token if it is still valid.
+
+    TODO: Maybe this should require the client_id as well?
+
+    Args:
+        db_path: Path to the database.
+        token: Opaque refresh token string.
+
+    Returns:
+        The deleted refresh token row when valid and unexpired, otherwise None.
+    """
+    now = datetime.now(timezone.utc)
+    with get_session(db_path) as session:
+        deleted_token_row = (
+            session.execute(
+                delete(RefreshToken)
+                .where(
+                    RefreshToken.token == token,
+                    RefreshToken.expires_at > now,
+                )
+                .returning(
+                    RefreshToken.token,
+                    RefreshToken.client_id,
+                    RefreshToken.user_id,
+                    RefreshToken.scope,
+                    RefreshToken.audience,
+                    RefreshToken.expires_at,
+                    RefreshToken.created_at,
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        session.commit()
+        if deleted_token_row is None:
+            return None
+        return RefreshToken(**deleted_token_row)
+
+
+def delete_refresh_token(db_path: str, token: str) -> bool:
+    """Delete a refresh token by value.
+
+    Args:
+        db_path: Path to the database.
+        token: Opaque refresh token string.
+
+    Returns:
+        True when the token existed and was deleted, otherwise False.
+    """
+    with get_session(db_path) as session:
+        refresh_token = session.get(RefreshToken, token)
+        if refresh_token:
+            session.delete(refresh_token)
+            session.commit()
+            return True
+        return False
+
+
+def prune_refresh_tokens(db_path: str) -> int:
+    """Delete expired refresh token rows and return the number deleted.
+
+    Args:
+        db_path: Path to the database.
+
+    Returns:
+        Number of deleted rows.
+    """
+    now = datetime.now(timezone.utc)
+    prune_predicate = RefreshToken.expires_at < now
+
+    with get_session(db_path) as session:
+        deleted_count = session.scalar(
+            select(func.count()).select_from(RefreshToken).where(prune_predicate)
+        )
+        session.execute(delete(RefreshToken).where(prune_predicate))
         session.commit()
         return int(deleted_count or 0)
 

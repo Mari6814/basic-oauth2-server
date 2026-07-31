@@ -50,6 +50,7 @@ class ServerConfig:
     eddsa_key_id: str | None = None
     # Token expiry in seconds (default: 3600 = 1 hour)
     token_expires_in: int = 3600
+    refresh_token_expires_in: int = 2592000
 
     def __post_init__(self) -> None:
         """Validate fields that affect token claim correctness."""
@@ -122,6 +123,9 @@ class ServerConfig:
             ec_p521_key_id=os.environ.get("OAUTH_EC_P521_KEY_ID"),
             eddsa_key_id=os.environ.get("OAUTH_EDDSA_KEY_ID"),
             token_expires_in=int(os.environ.get("OAUTH_TOKEN_EXPIRES_IN", "3600")),
+            refresh_token_expires_in=int(
+                os.environ.get("OAUTH_REFRESH_TOKEN_EXPIRES_IN", "2592000")
+            ),
         )
 
 

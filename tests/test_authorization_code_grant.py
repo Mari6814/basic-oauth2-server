@@ -13,12 +13,15 @@ from jws_algorithms import SymmetricAlgorithm
 from basic_oauth2_server.authorization_code_grant import (
     handle_authorize,
     handle_authorization_code,
+    handle_refresh_token,
 )
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import (
     AuthorizationCode,
+    RefreshToken,
     create_authorization_code,
     create_client,
+    create_refresh_token,
     create_user,
     get_session,
 )
@@ -58,16 +61,21 @@ def config(db_path: str) -> ServerConfig:
 
 
 def b64(s: str) -> str:
+    """Encode a string as base64 text."""
     return base64.b64encode(s.encode()).decode()
 
 
 def _s256_challenge(verifier: str) -> str:
+    """Build an S256 PKCE challenge from a verifier."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 class TestHandleAuthorize:
+    """Tests for the consent step of the authorization code flow."""
+
     def test_invalid_code_challenge_method_raises(self, config: ServerConfig) -> None:
+        """Unsupported PKCE methods are rejected."""
         with pytest.raises(InvalidRequestException, match="code_challenge_method"):
             handle_authorize(
                 authorized_username="testuser",
@@ -82,6 +90,7 @@ class TestHandleAuthorize:
             )
 
     def test_invalid_client_raises(self, config: ServerConfig) -> None:
+        """Unknown clients are rejected."""
         with pytest.raises(InvalidClientException, match="Invalid client"):
             handle_authorize(
                 authorized_username="testuser",
@@ -98,6 +107,7 @@ class TestHandleAuthorize:
     def test_invalid_scope_raises_redirect_exception(
         self, config: ServerConfig
     ) -> None:
+        """Invalid scopes are returned as redirect errors."""
         with pytest.raises(AuthorizationRedirectException) as exc_info:
             handle_authorize(
                 authorized_username="testuser",
@@ -120,6 +130,7 @@ class TestHandleAuthorize:
     def test_invalid_audience_raises_redirect_exception(
         self, config: ServerConfig
     ) -> None:
+        """Invalid audiences are returned as redirect errors."""
         with pytest.raises(AuthorizationRedirectException) as exc_info:
             handle_authorize(
                 authorized_username="testuser",
@@ -141,7 +152,10 @@ class TestHandleAuthorize:
 
 
 class TestHandleAuthorizationCode:
+    """Tests for exchanging authorization codes for tokens."""
+
     def test_missing_code_raises(self, config: ServerConfig) -> None:
+        """A missing authorization code is rejected."""
         with pytest.raises(InvalidRequestException, match="Missing authorization code"):
             handle_authorization_code(
                 config=config,
@@ -153,6 +167,7 @@ class TestHandleAuthorizationCode:
             )
 
     def test_client_not_found_raises(self, config: ServerConfig, db_path: str) -> None:
+        """Unknown clients cannot exchange authorization codes."""
         code = create_authorization_code(
             db_path=db_path,
             client_id="test-client",
@@ -209,6 +224,7 @@ class TestHandleAuthorizationCode:
     def test_redirect_uri_mismatch_raises(
         self, config: ServerConfig, db_path: str
     ) -> None:
+        """Authorization codes are bound to their redirect URI."""
         code_verifier = "my-verifier-long-enough-for-s256"
         code = create_authorization_code(
             db_path=db_path,
@@ -234,6 +250,7 @@ class TestHandleAuthorizationCode:
     def test_successful_exchange_prunes_stale_authorization_codes(
         self, config: ServerConfig, db_path: str
     ) -> None:
+        """Successful exchanges return a refresh token and prune stale auth codes."""
         code_verifier = "my-verifier-long-enough-for-s256"
         valid_code = create_authorization_code(
             db_path=db_path,
@@ -294,12 +311,141 @@ class TestHandleAuthorizationCode:
         )
 
         assert response["token_type"] == "Bearer"
+        assert isinstance(response["refresh_token"], str)
         with get_session(db_path) as session:
             assert session.get(AuthorizationCode, expired_code) is None
             assert session.get(AuthorizationCode, used_code) is None
 
 
+class TestHandleRefreshToken:
+    """Tests for exchanging refresh tokens for rotated tokens."""
+
+    def test_missing_refresh_token_raises(self, config: ServerConfig) -> None:
+        """A missing refresh_token parameter is rejected."""
+        with pytest.raises(InvalidRequestException, match="Missing refresh_token"):
+            handle_refresh_token(
+                config=config,
+                client_id="test-client",
+                client_secret=b64("test-secret"),
+                refresh_token=None,
+            )
+
+    def test_valid_refresh_token_returns_rotated_tokens(
+        self, config: ServerConfig, db_path: str
+    ) -> None:
+        """A valid refresh token issues a new access token and replacement refresh token."""
+        refresh_token = create_refresh_token(
+            db_path=db_path,
+            client_id="test-client",
+            user_id="testuser",
+            scope="read write",
+            audience="https://api.example.com",
+            expires_in=3600,
+        )
+
+        response = handle_refresh_token(
+            config=config,
+            client_id="test-client",
+            client_secret=b64("test-secret"),
+            refresh_token=refresh_token,
+        )
+
+        assert response["token_type"] == "Bearer"
+        assert isinstance(response["access_token"], str)
+        assert isinstance(response["refresh_token"], str)
+        assert response["refresh_token"] != refresh_token
+        assert response["scope"] == "read write"
+
+    def test_consumed_refresh_token_cannot_be_reused(
+        self, config: ServerConfig, db_path: str
+    ) -> None:
+        """Refresh tokens are single-use and invalid after rotation."""
+        refresh_token = create_refresh_token(
+            db_path=db_path,
+            client_id="test-client",
+            user_id="testuser",
+            scope="read",
+            audience=None,
+            expires_in=3600,
+        )
+
+        handle_refresh_token(
+            config=config,
+            client_id="test-client",
+            client_secret=b64("test-secret"),
+            refresh_token=refresh_token,
+        )
+
+        with pytest.raises(
+            InvalidGrantException, match="Invalid or expired refresh token"
+        ):
+            handle_refresh_token(
+                config=config,
+                client_id="test-client",
+                client_secret=b64("test-secret"),
+                refresh_token=refresh_token,
+            )
+
+    def test_expired_refresh_token_raises(
+        self, config: ServerConfig, db_path: str
+    ) -> None:
+        """Expired refresh tokens are rejected."""
+        refresh_token = create_refresh_token(
+            db_path=db_path,
+            client_id="test-client",
+            user_id="testuser",
+            scope="read",
+            audience=None,
+            expires_in=-1,
+        )
+
+        with pytest.raises(
+            InvalidGrantException, match="Invalid or expired refresh token"
+        ):
+            handle_refresh_token(
+                config=config,
+                client_id="test-client",
+                client_secret=b64("test-secret"),
+                refresh_token=refresh_token,
+            )
+
+    def test_wrong_client_refresh_token_raises(
+        self, config: ServerConfig, db_path: str
+    ) -> None:
+        """Refresh tokens cannot be exchanged by a different client."""
+        create_client(
+            db_path=db_path,
+            client_id="other-client",
+            client_secret=b"other-secret",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"other-signing-secret-1234567890",
+        )
+        refresh_token = create_refresh_token(
+            db_path=db_path,
+            client_id="test-client",
+            user_id="testuser",
+            scope="read",
+            audience=None,
+            expires_in=3600,
+        )
+
+        with pytest.raises(
+            InvalidGrantException, match="Invalid or expired refresh token"
+        ):
+            handle_refresh_token(
+                config=config,
+                client_id="other-client",
+                client_secret=b64("other-secret"),
+                refresh_token=refresh_token,
+            )
+
+        with get_session(db_path) as session:
+            assert session.get(RefreshToken, refresh_token) is None
+
+
 class TestVerifyPkceUnsupportedMethods:
+    """Tests for PKCE method validation."""
+
     @pytest.mark.parametrize("method", ["plain", "S512", "INVALID"])
     def test_unsupported_method_rejected(
         self, config: ServerConfig, method: str

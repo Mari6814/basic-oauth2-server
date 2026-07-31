@@ -1,9 +1,9 @@
 # Basic OAuth Authorization Server
 
 A lightweight python package that implements an OAuth 2.0 authorization server
-supporting the client credentials and authorization code (with PKCE) grant
-types. It issues JWT tokens that can be used to authenticate requests to your
-protected resources.
+supporting the client credentials, authorization code (with PKCE), and refresh
+token grant types. It issues JWT access tokens that can be used to authenticate
+requests to your protected resources.
 
 ## Why?
 
@@ -23,6 +23,7 @@ can read the `--help` output, you can configure this oauth2 provider.
 
 - **OAuth 2.0 Client Credentials Flow** - Server-to-server authentication via the token endpoint
 - **OAuth 2.0 Authorization Code Flow** - User-delegated access with PKCE
+- **OAuth 2.0 Refresh Token Flow** - Opaque refresh tokens to re-issue access tokens for some time
 - **JWT Access Tokens** - Uses JWTs for access tokens that can be configured to include scopes, audiences, custom claims, symmetric or even asymmetric signing algorithms on a per-client basis
 - **Multiple Signing Algorithms** - Support for HMAC-SHA (HS256, HS384, HS512), RSA (RS256, RS384, RS512), RSA-PSS (PS256, PS384, PS512), ECDSA (ES256, ES384, ES512), and EdDSA (Ed25519) that can be configured per client, with support for multiple active keys and automatic JWT `kid` header population
 - **SQLite Persistence** - Simple file-based database, no external DB required
@@ -129,6 +130,7 @@ curl http://localhost:8080/oauth2/token \
   "access_token": "ey...",
   "token_type": "Bearer",
   "expires_in": 3600,
+  "refresh_token": "your-refresh-token",
   "scope": "read write"
 }
 ```
@@ -504,7 +506,7 @@ basic-oauth2-server auth-codes prune
 
 ### POST /oauth2/token
 
-Request a new access token. Supports two grant types.
+Request a new access token. Supports three grant types.
 
 **Success Response (200 OK):**
 
@@ -513,6 +515,7 @@ Request a new access token. Supports two grant types.
   "access_token": "ey...",
   "token_type": "Bearer",
   "expires_in": 3600,
+  "refresh_token": "your-refresh-token",
   "scope": "read write"
 }
 ```
@@ -548,6 +551,22 @@ The parameters `client_id` and `client_secret` can also be provided via HTTP Bas
 | `redirect_uri`  | Yes      | Must match the `redirect_uri` used in the authorize request  |
 | `code_verifier` | Yes      | The PKCE code verifier corresponding to the `code_challenge` |
 
+Successful authorization code exchanges also return a `refresh_token`. Refresh
+tokens are opaque, stored in SQLite, tied to the client, user, scope, and
+audience, and rotated on every use.
+
+#### `refresh_token`
+
+| Parameter       | Required | Description                                               |
+| --------------- | -------- | --------------------------------------------------------- |
+| `grant_type`    | Yes      | only `refresh_token`                                      |
+| `client_id`     | Yes      | The client identifier                                     |
+| `client_secret` | Yes      | The client secret                                         |
+| `refresh_token` | Yes      | The previously issued refresh token                       |
+
+Successful refresh token exchanges return a new access token and a new rotated
+refresh token.
+
 ## Token Introspection
 
 ### POST /oauth2/introspect
@@ -559,9 +578,12 @@ Invalid, expired, or tampered tokens return `{"active": false}`.
 
 ### POST /oauth2/revoke
 
-**Access token revocation** is not implemented, because access tokens are short-lived JWTs that, once issued, remain valid until expiry.
+Revoke a refresh token using client authentication via HTTP Basic auth or the
+`client_id` and `client_secret` form parameters. The request body must include a
+`token` form field and may include `token_type_hint=refresh_token`.
 
-TODO: Refresh token revocation will be implemented.
+Access token revocation is not implemented because access tokens are short-lived
+JWTs that, once issued, remain valid until expiry.
 
 ### JWKS
 Audiences can verify access tokens locally via the shared signing secret create
@@ -737,11 +759,6 @@ export OAUTH_EDDSA_KEY_ID="eddsa-prod-2026"
 
 basic-oauth2-server serve
 ```
-
-## Future Work / TODO
-
-- Refactor invalid_audience entirely. The audience should be determined by the client and not be selection when creating the token. instead of letting the client request an audience, we will simply add all audiences recorded in the application to the JWT.
-- Refresh code flow 
 
 ## License
 

@@ -1,7 +1,4 @@
-"""Module for bundling access and refresh token creation logic.
-
-I called it a service, but its just functions, and not dependency-inversed generic service nonsense. Deal with it.
-"""
+"""Helpers for issuing OAuth access and refresh tokens."""
 
 from basic_oauth2_server.config import ServerConfig
 
@@ -10,7 +7,7 @@ from .jwt import (
     get_algorithm,
     SymmetricAlgorithm,
 )
-from .db import Client
+from .db import Client, create_refresh_token
 
 
 def create_access_token_for_client(
@@ -30,6 +27,9 @@ def create_access_token_for_client(
         client: The client for which to create the access token. The client's configured algorithm and signing secret (for symmetric algorithms) will be used.
         scopes: Optional list of scopes to include in the token's "scope" claim.
         audience: Optional audience to include in the token's "aud" claim.
+
+    Returns:
+        A signed JWT access token.
     """
     algorithm = get_algorithm(client.algorithm)
 
@@ -64,8 +64,30 @@ def create_access_token_for_client(
         )
 
 
-def create_client_refresh_token(
-    server: ServerConfig,
-):
-    # TODO (missing feature): Refresh tokens are not implemented yet.
-    pass
+def create_refresh_token_for_client(
+    config: ServerConfig,
+    client: Client,
+    user_id: str,
+    scopes: list[str] | None = None,
+    audience: str | None = None,
+) -> str:
+    """Create and persist an opaque refresh token for a client and user.
+
+    Args:
+        config: Server configuration containing DB path and refresh TTL.
+        client: Client the refresh token belongs to.
+        user_id: Authenticated resource owner username.
+        scopes: Optional scopes tied to the refresh token.
+        audience: Optional audience tied to the refresh token.
+
+    Returns:
+        The opaque refresh token string.
+    """
+    return create_refresh_token(
+        db_path=config.db_path,
+        client_id=client.client_id,
+        user_id=user_id,
+        scope=" ".join(scopes) if scopes else None,
+        audience=audience,
+        expires_in=config.refresh_token_expires_in,
+    )

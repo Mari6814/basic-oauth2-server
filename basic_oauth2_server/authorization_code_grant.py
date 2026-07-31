@@ -7,7 +7,10 @@ import hashlib
 
 from basic_oauth2_server.consent_token import create_consent_token
 
-from .token_service import create_access_token_for_client
+from .token_service import (
+    create_access_token_for_client,
+    create_refresh_token_for_client,
+)
 from .exceptions import (
     AuthorizationRedirectException,
     InvalidClientException,
@@ -18,8 +21,10 @@ from .config import ServerConfig
 from .db import (
     create_authorization_code,
     consume_authorization_code,
+    consume_refresh_token,
     get_client,
     prune_authorization_codes,
+    prune_refresh_tokens,
     touch_client_last_used,
 )
 
@@ -176,7 +181,10 @@ def handle_authorization_code(
     code: str | None,
     redirect_uri: str | None,
     code_verifier: str | None,
-) -> dict[Literal["access_token", "token_type", "expires_in", "scope"], str | int]:
+) -> dict[
+    Literal["access_token", "token_type", "expires_in", "refresh_token", "scope"],
+    str | int,
+]:
     """Handle the authorization_code grant type with PKCE validation."""
     if not code:
         raise InvalidRequestException("Missing authorization code")
@@ -214,9 +222,17 @@ def handle_authorization_code(
         audience=auth_code.audience,
         subject=auth_code.user_id,
     )
+    refresh_token = create_refresh_token_for_client(
+        config=config,
+        client=client,
+        user_id=auth_code.user_id,
+        scopes=scopes,
+        audience=auth_code.audience,
+    )
 
     touch_client_last_used(config.db_path, client_id)
     prune_authorization_codes(config.db_path)
+    prune_refresh_tokens(config.db_path)
     logger.info(
         "Issued token via authorization_code for client: %s, user: %s",
         client_id,
@@ -227,6 +243,85 @@ def handle_authorization_code(
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": config.token_expires_in,
+        "refresh_token": refresh_token,
+        **({"scope": " ".join(scopes)} if scopes else {}),
+    }
+
+
+def handle_refresh_token(
+    config: ServerConfig,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str | None,
+) -> dict[
+    Literal["access_token", "token_type", "expires_in", "refresh_token", "scope"],
+    str | int,
+]:
+    """Handle the refresh_token grant type.
+
+    Args:
+        config: Server configuration.
+        client_id: Client identifier.
+        client_secret: Client secret used for authentication.
+        refresh_token: Opaque refresh token presented by the client.
+
+    Returns:
+        OAuth token response payload.
+
+    Raises:
+        InvalidRequestException: If the refresh token parameter is missing.
+        InvalidClientException: If client authentication fails.
+        InvalidGrantException: If the refresh token is invalid, expired, or bound
+            to another client.
+    """
+    if not refresh_token:
+        raise InvalidRequestException("Missing refresh_token")
+
+    client = get_client(config.db_path, client_id)
+    if not client:
+        raise InvalidClientException("Client not found")
+
+    if not client.verify_client_secret(client_secret):
+        raise InvalidClientException("Client authentication failed")
+
+    persisted_refresh_token = consume_refresh_token(config.db_path, refresh_token)
+    if not persisted_refresh_token:
+        raise InvalidGrantException("Invalid or expired refresh token")
+
+    if persisted_refresh_token.client_id != client_id:
+        raise InvalidGrantException("Invalid or expired refresh token")
+
+    scopes = (
+        persisted_refresh_token.scope.split() if persisted_refresh_token.scope else None
+    )
+    access_token = create_access_token_for_client(
+        config=config,
+        client=client,
+        scopes=scopes,
+        audience=persisted_refresh_token.audience,
+        subject=persisted_refresh_token.user_id,
+    )
+    rotated_refresh_token = create_refresh_token_for_client(
+        config=config,
+        client=client,
+        user_id=persisted_refresh_token.user_id,
+        scopes=scopes,
+        audience=persisted_refresh_token.audience,
+    )
+
+    touch_client_last_used(config.db_path, client_id)
+    prune_refresh_tokens(config.db_path)
+    logger.info(
+        "Issued token via refresh_token for client: %s, user: %s",
+        client_id,
+        persisted_refresh_token.user_id,
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": config.token_expires_in,
+        "refresh_token": rotated_refresh_token,
         **({"scope": " ".join(scopes)} if scopes else {}),
     }
 

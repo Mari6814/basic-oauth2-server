@@ -15,6 +15,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     RATE_LIMITED_PATHS = {
         "/oauth2/token",
         "/oauth2/introspect",
+        "/oauth2/revoke",
         "/authorize",
         "/authorize/confirm",
     }

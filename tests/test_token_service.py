@@ -1,4 +1,4 @@
-"""Tests for token_service.create_access_token_for_client."""
+"""Tests for access and refresh token helpers."""
 
 import base64
 import json
@@ -8,12 +8,18 @@ from pathlib import Path
 import pytest
 from jws_algorithms import SymmetricAlgorithm, AsymmetricAlgorithm
 
-from basic_oauth2_server.db import create_client, get_client
+from basic_oauth2_server.db import (
+    RefreshToken,
+    create_client,
+    create_user,
+    get_client,
+    get_session,
+)
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.exceptions import OAuthServerErrorException
 from basic_oauth2_server.token_service import (
     create_access_token_for_client,
-    create_client_refresh_token,
+    create_refresh_token_for_client,
 )
 
 KEYS_DIR = Path(__file__).parent / "keys"
@@ -120,10 +126,39 @@ def test_access_token_missing_key(tmp_path: Path) -> None:
         create_access_token_for_client(config, client)
 
 
-def test_create_client_refresh_token_returns_none() -> None:
-    """create_client_refresh_token is a stub that returns None."""
-    result = create_client_refresh_token(ServerConfig())
-    assert result is None
+def test_create_refresh_token_for_client_persists_token(tmp_path: Path) -> None:
+    """Refresh token helper stores an opaque token in the database."""
+    db_path = str(tmp_path / "test.db")
+    create_client(
+        db_path=db_path,
+        client_id="client-refresh",
+        client_secret=b"secret",
+        algorithm=SymmetricAlgorithm.HS256,
+        signing_secret=b"refresh-signing-secret-1234567890",
+    )
+    create_user(db_path, "alice", "password")
+    client = get_client(db_path, "client-refresh")
+    assert client
+
+    token = create_refresh_token_for_client(
+        config=ServerConfig(db_path=db_path, refresh_token_expires_in=1234),
+        client=client,
+        user_id="alice",
+        scopes=["read", "write"],
+        audience="https://api.example.com",
+    )
+
+    assert isinstance(token, str)
+    assert "." not in token
+
+    with get_session(db_path) as session:
+        persisted = session.get(RefreshToken, token)
+
+    assert persisted is not None
+    assert persisted.client_id == "client-refresh"
+    assert persisted.user_id == "alice"
+    assert persisted.scope == "read write"
+    assert persisted.audience == "https://api.example.com"
 
 
 def test_oauth_server_error_exception_stores_description() -> None:

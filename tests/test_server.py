@@ -14,7 +14,14 @@ from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import create_client, create_user, init_db
+from basic_oauth2_server.db import (
+    RefreshToken,
+    create_client,
+    create_refresh_token,
+    create_user,
+    get_session,
+    init_db,
+)
 from basic_oauth2_server.jwt import create_access_token
 from basic_oauth2_server.server import create_app
 
@@ -773,6 +780,110 @@ class TestTokenIntrospection:
         assert response.status_code == 401
 
 
+class TestRevokeEndpoint:
+    """Tests for the refresh token revocation endpoint."""
+
+    def test_revoke_valid_refresh_token_invalidates_future_use(
+        self, client_with_db: TestClient
+    ) -> None:
+        """Revoking a valid refresh token prevents later refresh exchange."""
+        refresh_token = _get_refresh_token(client_with_db)
+
+        revoke_response = client_with_db.post(
+            "/oauth2/revoke",
+            data={"token": refresh_token},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert revoke_response.status_code == 200
+        assert revoke_response.json() == {}
+
+        refresh_response = client_with_db.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert refresh_response.status_code == 400
+        assert refresh_response.json()["error"] == "invalid_grant"
+
+    def test_revoke_nonexistent_refresh_token_returns_success(
+        self, client_with_db: TestClient
+    ) -> None:
+        """Revoking an unknown refresh token still returns success."""
+        response = client_with_db.post(
+            "/oauth2/revoke",
+            data={"token": "nonexistent-refresh-token"},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {}
+
+    def test_revoke_accepts_refresh_token_type_hint(
+        self, client_with_db: TestClient
+    ) -> None:
+        """The refresh_token hint is accepted."""
+        refresh_token = _get_refresh_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/revoke",
+            data={
+                "token": refresh_token,
+                "token_type_hint": "refresh_token",
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {}
+
+    def test_revoke_rejects_unsupported_token_type_hint(
+        self, client_with_db: TestClient
+    ) -> None:
+        """Unsupported token type hints return unsupported_token_type."""
+        refresh_token = _get_refresh_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/revoke",
+            data={
+                "token": refresh_token,
+                "token_type_hint": "access_token",
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 400
+        assert response.json()["error"] == "unsupported_token_type"
+
+    def test_revoke_requires_client_authentication(
+        self, client_with_db: TestClient
+    ) -> None:
+        """Client authentication is required for revocation."""
+        refresh_token = _get_refresh_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/revoke",
+            data={"token": refresh_token},
+        )
+
+        assert response.status_code == 401
+
+    def test_revoke_missing_token_returns_validation_error(
+        self, client_with_db: TestClient
+    ) -> None:
+        """A missing token form field is rejected by request validation."""
+        response = client_with_db.post(
+            "/oauth2/revoke",
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 422
+
+
 def _pkce_pair() -> tuple[str, str]:
     """Generate a PKCE code_verifier and S256 code_challenge."""
     verifier = secrets.token_urlsafe(48)
@@ -809,6 +920,30 @@ def _get_access_token(
     )
     assert response.status_code == 200, response.text
     return response.json()["access_token"]
+
+
+def _get_refresh_token(
+    tc: TestClient,
+    *,
+    client_id: str = "test-client",
+    client_secret: str = "test-secret",
+) -> str:
+    """Run the authorization code flow and return the issued refresh token."""
+    verifier, challenge = _pkce_pair()
+    code = _get_auth_code(tc, verifier, challenge, state="refresh-token-state")
+
+    response = tc.post(
+        "/oauth2/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": "http://localhost/callback",
+            "code_verifier": verifier,
+        },
+        headers=_basic_auth_header(client_id, b64(client_secret)),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["refresh_token"]
 
 
 def _get_consent_token(
@@ -909,6 +1044,7 @@ def test_authorization_code_full_flow(client_with_db: TestClient) -> None:
     assert response.status_code == 200
     token_data = response.json()
     assert "access_token" in token_data
+    assert "refresh_token" in token_data
     assert token_data["token_type"] == "Bearer"
     assert token_data["expires_in"] == 3600
     assert token_data["scope"] == "read write"
@@ -1173,9 +1309,159 @@ def test_authorization_code_flow_form_credentials(client_with_db: TestClient) ->
     assert response.status_code == 200
     token_data = response.json()
     assert "access_token" in token_data
+    assert "refresh_token" in token_data
     assert token_data["token_type"] == "Bearer"
     assert token_data["expires_in"] == 3600
     assert token_data["scope"] == "read write"
+
+
+class TestRefreshTokenGrant:
+    """Tests for the refresh_token token endpoint grant."""
+
+    def test_refresh_token_grant_returns_rotated_tokens(
+        self, client_with_db: TestClient
+    ) -> None:
+        """A valid refresh token returns a new access token and refresh token."""
+        issued_refresh_token = _get_refresh_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": issued_refresh_token,
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        token_data = response.json()
+        assert "access_token" in token_data
+        assert "refresh_token" in token_data
+        assert token_data["refresh_token"] != issued_refresh_token
+        assert token_data["token_type"] == "Bearer"
+        assert token_data["expires_in"] == 3600
+        assert token_data["scope"] == "read write"
+
+    def test_refresh_token_is_single_use(self, client_with_db: TestClient) -> None:
+        """A refresh token cannot be exchanged twice."""
+        issued_refresh_token = _get_refresh_token(client_with_db)
+
+        first_response = client_with_db.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": issued_refresh_token,
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+        assert first_response.status_code == 200
+
+        second_response = client_with_db.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": issued_refresh_token,
+            },
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+        assert second_response.status_code == 400
+        assert second_response.json()["error"] == "invalid_grant"
+
+    def test_expired_refresh_token_returns_invalid_grant(self, temp_db: str) -> None:
+        """Expired refresh tokens are rejected by the token endpoint."""
+        create_client(
+            db_path=temp_db,
+            client_id="expiry-client",
+            client_secret=b"expiry-secret",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"expiry-signing-secret-12345",
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_user(temp_db, "testuser", "testpass")
+        issued_refresh_token = create_refresh_token(
+            db_path=temp_db,
+            client_id="expiry-client",
+            user_id="testuser",
+            scope="read",
+            audience=None,
+            expires_in=-1,
+        )
+
+        config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+        app = create_app(config)
+        tc = TestClient(app)
+
+        response = tc.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": issued_refresh_token,
+            },
+            headers=_basic_auth_header("expiry-client", b64("expiry-secret")),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_grant"
+
+    def test_wrong_client_refresh_token_returns_invalid_grant(
+        self, temp_db: str
+    ) -> None:
+        """A refresh token cannot be redeemed by another client."""
+        create_client(
+            db_path=temp_db,
+            client_id="client-a",
+            client_secret=b"secret-a",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"signing-secret-a-12345",
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_client(
+            db_path=temp_db,
+            client_id="client-b",
+            client_secret=b"secret-b",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"signing-secret-b-12345",
+            redirect_uris=["http://localhost/callback"],
+        )
+        create_user(temp_db, "testuser", "testpass")
+
+        issued_refresh_token = create_refresh_token(
+            db_path=temp_db,
+            client_id="client-a",
+            user_id="testuser",
+            scope="read",
+            audience=None,
+            expires_in=3600,
+        )
+
+        config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
+        app = create_app(config)
+        tc = TestClient(app)
+
+        response = tc.post(
+            "/oauth2/token",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": issued_refresh_token,
+            },
+            headers=_basic_auth_header("client-b", b64("secret-b")),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_grant"
+
+        with get_session(temp_db) as session:
+            assert session.get(RefreshToken, issued_refresh_token) is None
+
+    def test_missing_refresh_token_returns_invalid_request(
+        self, client_with_db: TestClient
+    ) -> None:
+        """The refresh_token grant requires the refresh_token form parameter."""
+        response = client_with_db.post(
+            "/oauth2/token",
+            data={"grant_type": "refresh_token"},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_request"
 
 
 def test_authorize_invalid_client(client_with_db: TestClient) -> None:

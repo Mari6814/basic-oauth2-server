@@ -12,7 +12,13 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from jws_algorithms import SymmetricAlgorithm
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import Client, get_client, get_user, init_db
+from basic_oauth2_server.db import (
+    Client,
+    delete_refresh_token,
+    get_client,
+    get_user,
+    init_db,
+)
 from basic_oauth2_server.exceptions import (
     AuthorizationRedirectException,
     InvalidClientException,
@@ -38,6 +44,7 @@ from .authorization_code_grant import (
     handle_authorization_code,
     handle_authorize,
     handle_authorize_confirm,
+    handle_refresh_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -220,6 +227,7 @@ def create_app(config: ServerConfig) -> FastAPI:
         scope: Annotated[str | None, Form()] = None,
         audience: Annotated[str | None, Form()] = None,
         code: Annotated[str | None, Form()] = None,
+        refresh_token: Annotated[str | None, Form()] = None,
         redirect_uri: Annotated[str | None, Form()] = None,
         code_verifier: Annotated[str | None, Form()] = None,
         client_credentials: Annotated[
@@ -260,6 +268,14 @@ def create_app(config: ServerConfig) -> FastAPI:
                     code_verifier=code_verifier,
                 )
                 return JSONResponse(content=authorization_code_data)
+            case "refresh_token":
+                refresh_token_data = handle_refresh_token(
+                    config=config,
+                    client_id=effective_client_id,
+                    client_secret=effective_client_secret,
+                    refresh_token=refresh_token,
+                )
+                return JSONResponse(content=refresh_token_data)
             case _:
                 raise InvalidGrantException("Unsupported grant_type")
 
@@ -283,6 +299,33 @@ def create_app(config: ServerConfig) -> FastAPI:
         if claims is None:
             return JSONResponse(content={"active": False})
         return JSONResponse(content={"active": True, **claims})
+
+    @app.post("/oauth2/revoke")
+    async def revoke_endpoint(
+        token: Annotated[str, Form()],
+        token_type_hint: Annotated[str | None, Form()] = None,
+        client_id: Annotated[str | None, Form()] = None,
+        client_secret: Annotated[str | None, Form()] = None,
+        client_credentials: Annotated[
+            HTTPBasicCredentials | None, Depends(token_security)
+        ] = None,
+    ) -> JSONResponse:
+        """Revoke a refresh token according to RFC 7009."""
+        _authenticate_client(
+            config=config,
+            client_id=client_id,
+            client_secret=client_secret,
+            client_credentials=client_credentials,
+        )
+        if token_type_hint is not None and token_type_hint != "refresh_token":
+            raise OAuth2Exception(
+                "unsupported_token_type",
+                "Only refresh_token revocation is supported",
+                400,
+            )
+
+        delete_refresh_token(config.db_path, token)
+        return JSONResponse(content={})
 
     return app
 
