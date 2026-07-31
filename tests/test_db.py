@@ -131,6 +131,7 @@ class TestClientTimestamps:
 class TestAuthorizationCodeTimestamps:
     def test_created_at_set_on_insert(self, db_path: str) -> None:
         """created_at is populated automatically when an authorization code is created."""
+        create_user(db_path, "user1", "pw")
         before = datetime.now(timezone.utc)
         code = create_authorization_code(
             db_path=db_path,
@@ -151,6 +152,7 @@ class TestAuthorizationCodeTimestamps:
 
     def test_updated_at_set_on_insert(self, db_path: str) -> None:
         """updated_at is populated automatically on initial insert."""
+        create_user(db_path, "user1", "pw")
         before = datetime.now(timezone.utc)
         code = create_authorization_code(
             db_path=db_path,
@@ -171,6 +173,7 @@ class TestAuthorizationCodeTimestamps:
 
     def test_updated_at_changes_on_update(self, db_path: str) -> None:
         """updated_at advances when an authorization code record is modified."""
+        create_user(db_path, "user1", "pw")
         code = create_authorization_code(
             db_path=db_path,
             client_id="client1",
@@ -203,6 +206,7 @@ class TestAuthorizationCodeTimestamps:
         """create_authorization_code rejects a replayed consent token."""
         consent_jti = secrets.token_urlsafe(32)
 
+        create_user(db_path, "user1", "pw")
         create_authorization_code(
             db_path=db_path,
             client_id="client1",
@@ -261,6 +265,16 @@ class TestUser:
         user = get_user(db_path, "dave")
         assert user is not None
         assert user.verify_password("wrong-password") is False
+
+    def test_verify_password_uses_full_password_bytes(self, db_path: str) -> None:
+        """verify_password distinguishes passwords that only differ after 72 bytes."""
+        long_password = "a" * 72 + "correct-suffix"
+        wrong_password = "a" * 72 + "wrong-suffix"
+        create_user(db_path, "longpw", long_password)
+        user = get_user(db_path, "longpw")
+        assert user is not None
+        assert user.verify_password(long_password) is True
+        assert user.verify_password(wrong_password) is False
 
     def test_delete_user_returns_true(self, db_path: str) -> None:
         """delete_user returns True and removes the user."""

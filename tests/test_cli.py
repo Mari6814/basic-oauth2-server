@@ -13,6 +13,7 @@ from basic_oauth2_server.cli import main
 from basic_oauth2_server.db import (
     AuthorizationCode,
     create_authorization_code,
+    create_user,
     get_client,
     get_session,
     get_user,
@@ -280,6 +281,9 @@ class TestAuthCodesPrune:
     def test_prune_deletes_used_and_expired_rows(
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
+        create_user(db, "user-a", "pw")
+        create_user(db, "user-b", "pw")
+        create_user(db, "user-c", "pw")
         used_code = create_authorization_code(
             db_path=db,
             client_id="client-a",
@@ -341,6 +345,7 @@ class TestAuthCodesPrune:
     def test_prune_with_no_matching_rows(
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
+        create_user(db, "user-active", "pw")
         create_authorization_code(
             db_path=db,
             client_id="client-active",

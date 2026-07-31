@@ -161,14 +161,13 @@ class User(TimestampMixin, Base):
 
     def set_password(self, password: str) -> None:
         """Hash and store the password using bcrypt."""
-        # TODO (minor): bcrypt silently truncates passwords longer than 72 bytes.
-        # Need to research what i can do. Maybe hash before encode and
-        # hash before verify_password?
-        self.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        pw_bytes = hashlib.sha256(password.encode()).digest()
+        self.password_hash = bcrypt.hashpw(pw_bytes, bcrypt.gensalt()).decode()
 
     def verify_password(self, password: str) -> bool:
         """Verify that the provided password matches the stored hash."""
-        return bcrypt.checkpw(password.encode(), self.password_hash.encode())
+        pw_bytes = hashlib.sha256(password.encode()).digest()
+        return bcrypt.checkpw(pw_bytes, self.password_hash.encode())
 
 
 Index("ix_users_username", User.username, unique=True)
