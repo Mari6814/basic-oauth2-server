@@ -112,3 +112,12 @@ def test_create_jwt_with_expires_in() -> None:
     payload = json.loads(_b64url_decode(parts[1]))
     assert "exp" in payload
     assert payload["exp"] >= before + 600
+
+
+def test_create_jwt_does_not_mutate_claims() -> None:
+    """Test that create_jwt does not mutate the caller's claims dict."""
+    original = {"sub": "client1"}
+
+    create_jwt(original, SymmetricAlgorithm.HS256, secret=b"secret")
+
+    assert original == {"sub": "client1"}

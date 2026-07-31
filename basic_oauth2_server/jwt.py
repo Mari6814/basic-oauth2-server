@@ -65,9 +65,7 @@ def create_jwt(
     header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
 
     # Create payload
-    # TODO (bug): This mutates the caller's `claims` dict in place
-    # (exp/iat/jti). Harmless in this codebase, but I probably should
-    # just copy the input.
+    claims = dict(claims)
     if expires_in is not None:
         claims["exp"] = int(time.time()) + expires_in
     if "iat" not in claims:
