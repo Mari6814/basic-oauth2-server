@@ -170,6 +170,31 @@ def test_token_endpoint_wrong_secret(client_with_db: TestClient) -> None:
     assert data["error"] == "invalid_client"
 
 
+def test_token_endpoint_missing_grant_type(client_with_db: TestClient) -> None:
+    """Test token request without grant_type."""
+    response = client_with_db.post(
+        "/oauth2/token",
+        headers=_basic_auth_header("test-client", b64("test-secret")),
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["error"] == "invalid_request"
+
+
+def test_token_endpoint_empty_grant_type(client_with_db: TestClient) -> None:
+    """Test token request with an empty grant_type."""
+    response = client_with_db.post(
+        "/oauth2/token",
+        data={"grant_type": ""},
+        headers=_basic_auth_header("test-client", b64("test-secret")),
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["error"] == "invalid_request"
+
+
 def test_token_endpoint_unsupported_grant_type(client_with_db: TestClient) -> None:
     """Test token request with unsupported grant type."""
     response = client_with_db.post(

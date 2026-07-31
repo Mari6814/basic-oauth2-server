@@ -199,7 +199,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     @app.post("/oauth2/token")
     async def token_endpoint(
-        grant_type: Annotated[str, Form()],
+        grant_type: Annotated[str | None, Form()] = None,
         client_id: Annotated[str | None, Form()] = None,
         client_secret: Annotated[str | None, Form()] = None,
         scope: Annotated[str | None, Form()] = None,
@@ -212,11 +212,9 @@ def create_app(config: ServerConfig) -> FastAPI:
         ] = None,
     ) -> JSONResponse:
         """OAuth 2.0 token endpoint supporting multiple grant types."""
-        # TODO (non-standard): Some fields that are declared as required
-        # like `grant_type` will result in `422 {"detail":[...]}` body
-        # instead of OAuth-shaped `400 {"error":"invalid_request"}` response.
-        # Need to make all parameters optional and validate manually so
-        # every error follows the OAuth error contract.
+        if not grant_type:
+            raise InvalidRequestException("Missing required parameter: grant_type")
+
         effective_client_id = (
             client_credentials.username if client_credentials else client_id
         )
