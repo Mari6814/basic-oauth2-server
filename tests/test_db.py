@@ -25,6 +25,7 @@ from basic_oauth2_server.db import (
     list_users,
     update_user_password,
 )
+from basic_oauth2_server.exceptions import InvalidGrantException
 
 
 @pytest.fixture(autouse=True)
@@ -198,6 +199,35 @@ class TestAuthorizationCodeTimestamps:
             updated = session.get(AuthorizationCode, code)
             assert updated is not None
             assert updated.updated_at >= original_updated_at
+
+    def test_reused_consent_jti_raises_invalid_grant(self, db_path: str) -> None:
+        """create_authorization_code rejects a replayed consent token."""
+        consent_jti = secrets.token_urlsafe(32)
+
+        create_authorization_code(
+            db_path=db_path,
+            client_id="client1",
+            user_id="user1",
+            redirect_uri=None,
+            scope="read",
+            audience=None,
+            state=None,
+            code_challenge=None,
+            consent_jti=consent_jti,
+        )
+
+        with pytest.raises(InvalidGrantException, match="Consent token already used"):
+            create_authorization_code(
+                db_path=db_path,
+                client_id="client1",
+                user_id="user1",
+                redirect_uri=None,
+                scope="read",
+                audience=None,
+                state=None,
+                code_challenge=None,
+                consent_jti=consent_jti,
+            )
 
 
 class TestUser:

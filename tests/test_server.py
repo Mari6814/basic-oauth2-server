@@ -1432,6 +1432,43 @@ class TestAuthorizeConfirmUserMismatch:
         assert response.status_code == 302
 
 
+class TestAuthorizeConfirmReplay:
+    """Tests for replaying consent tokens on /authorize/confirm."""
+
+    def test_reused_consent_token_returns_invalid_grant(
+        self, client_with_db: TestClient
+    ) -> None:
+        """The second confirmation of the same consent token returns invalid_grant."""
+        verifier, challenge = _pkce_pair()
+        consent_token = _get_consent_token(
+            client_with_db,
+            client_id="test-client",
+            redirect_uri="http://localhost/callback",
+            challenge=challenge,
+            state="replay-state",
+        )
+
+        first_response = client_with_db.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("testuser", "testpass"),
+            follow_redirects=False,
+        )
+        assert first_response.status_code == 302
+
+        second_response = client_with_db.post(
+            "/authorize/confirm",
+            data={"token": consent_token},
+            headers=_basic_auth_header("testuser", "testpass"),
+            follow_redirects=False,
+        )
+        assert second_response.status_code == 400
+        assert second_response.json()["error"] == "invalid_grant"
+        assert (
+            second_response.json()["error_description"] == "Consent token already used"
+        )
+
+
 def test_authorize_unsupported_response_type(client_with_db: TestClient) -> None:
     """GET /authorize with response_type other than 'code' returns 400."""
     response = client_with_db.get(

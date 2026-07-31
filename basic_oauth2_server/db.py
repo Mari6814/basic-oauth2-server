@@ -22,10 +22,12 @@ from sqlalchemy import (
     update,
     or_,
 )
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from basic_oauth2_server.config import get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
+from basic_oauth2_server.exceptions import InvalidGrantException
 from basic_oauth2_server.jwt import Algorithm
 
 
@@ -236,8 +238,12 @@ def create_authorization_code(
             expires_at=expires_at,
             consent_jti=consent_jti,
         )
-        session.add(auth_code)
-        session.commit()
+        try:
+            session.add(auth_code)
+            session.commit()
+        except IntegrityError as exc:
+            session.rollback()
+            raise InvalidGrantException("Consent token already used") from exc
     return code
 
 
