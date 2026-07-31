@@ -11,6 +11,7 @@ import secrets
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     String,
     Text,
     create_engine,
@@ -180,8 +181,9 @@ class AuthorizationCode(TimestampMixin, Base):
 
     code: Mapped[str] = mapped_column(String(128), primary_key=True)
     client_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    # TODO: The user who authorized the request (from Basic Auth). Should be a foreign key to the new users table?
-    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("users.username"), nullable=False
+    )
     redirect_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Space-separated scopes
     scope: Mapped[str | None] = mapped_column(Text, nullable=True)
