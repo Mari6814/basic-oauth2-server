@@ -548,6 +548,21 @@ The parameters `client_id` and `client_secret` can also be provided via HTTP Bas
 | `redirect_uri`  | Yes      | Must match the `redirect_uri` used in the authorize request  |
 | `code_verifier` | Yes      | The PKCE code verifier corresponding to the `code_challenge` |
 
+## Token Introspection
+
+### POST /oauth2/introspect
+
+Inspect an access token using client authentication via HTTP Basic auth or the
+`client_id` and `client_secret` form parameters. The request body must include a
+`token` form field. Valid active tokens return `{"active": true, ...claims }`.
+Invalid, expired, or tampered tokens return `{"active": false}`.
+
+### POST /oauth2/revoke
+
+**Access token revocation** is not implemented, because access tokens are short-lived JWTs that, once issued, remain valid until expiry.
+
+TODO: Refresh token revocation will be implemented.
+
 ### JWKS
 Audiences can verify access tokens locally via the shared signing secret create
 with each client if a symmetric algorithm is used, but if the client uses an
@@ -725,7 +740,6 @@ basic-oauth2-server serve
 
 ## Future Work / TODO
 
-- Token revocation lists
 - Refactor invalid_audience entirely. The audience should be determined by the client and not be selection when creating the token. instead of letting the client request an audience, we will simply add all audiences recorded in the application to the JWT.
 - Refresh code flow 
 

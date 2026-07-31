@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import create_client, create_user, init_db
+from basic_oauth2_server.jwt import create_access_token
 from basic_oauth2_server.server import create_app
 
 
@@ -685,6 +686,93 @@ def test_token_endpoint_cache_control_headers_on_error(
     assert response.headers["Pragma"] == "no-cache"
 
 
+class TestTokenIntrospection:
+    """Tests for the token introspection endpoint."""
+
+    def test_valid_active_token_returns_claims(
+        self, client_with_db: TestClient
+    ) -> None:
+        """An active token returns active=true with its claims."""
+        access_token = _get_access_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/introspect",
+            data={"token": access_token},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["active"] is True
+        assert data["sub"] == "test-client"
+        assert data["client_id"] == "test-client"
+        assert data["scope"] == "read write"
+        assert isinstance(data["exp"], int)
+        assert isinstance(data["iat"], int)
+        assert isinstance(data["jti"], str)
+
+    def test_expired_token_returns_inactive(self, client_with_db: TestClient) -> None:
+        """An expired token introspects as inactive."""
+        expired_token = create_access_token(
+            subject="test-client",
+            algorithm=SymmetricAlgorithm.HS256,
+            secret=b"test-signing-secret-1234567890",
+            scopes=["read", "write"],
+            issuer="http://localhost:8080",
+            client_id="test-client",
+            expires_in=-10,
+        )
+
+        response = client_with_db.post(
+            "/oauth2/introspect",
+            data={"token": expired_token},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"active": False}
+
+    def test_tampered_token_returns_inactive(self, client_with_db: TestClient) -> None:
+        """A tampered token introspects as inactive."""
+        access_token = _get_access_token(client_with_db)
+        header, payload, signature = access_token.split(".")
+        tampered_signature = f"{'A' if signature[0] != 'A' else 'B'}{signature[1:]}"
+        tampered_token = ".".join([header, payload, tampered_signature])
+
+        response = client_with_db.post(
+            "/oauth2/introspect",
+            data={"token": tampered_token},
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"active": False}
+
+    def test_missing_token_param_returns_validation_error(
+        self, client_with_db: TestClient
+    ) -> None:
+        """A missing token form field is rejected by request validation."""
+        response = client_with_db.post(
+            "/oauth2/introspect",
+            headers=_basic_auth_header("test-client", b64("test-secret")),
+        )
+
+        assert response.status_code == 422
+
+    def test_unauthenticated_request_returns_401(
+        self, client_with_db: TestClient
+    ) -> None:
+        """Client authentication is required for introspection."""
+        access_token = _get_access_token(client_with_db)
+
+        response = client_with_db.post(
+            "/oauth2/introspect",
+            data={"token": access_token},
+        )
+
+        assert response.status_code == 401
+
+
 def _pkce_pair() -> tuple[str, str]:
     """Generate a PKCE code_verifier and S256 code_challenge."""
     verifier = secrets.token_urlsafe(48)
@@ -697,6 +785,30 @@ def _basic_auth_header(username: str, password: str) -> dict[str, str]:
     """Build an HTTP Basic Auth header."""
     creds = base64.b64encode(f"{username}:{password}".encode()).decode()
     return {"Authorization": f"Basic {creds}"}
+
+
+def _get_access_token(
+    tc: TestClient,
+    *,
+    client_id: str = "test-client",
+    client_secret: str = "test-secret",
+    scope: str | None = "read write",
+    audience: str | None = "https://api.test.com",
+) -> str:
+    """Request a fresh access token from the token endpoint."""
+    data: dict[str, str] = {"grant_type": "client_credentials"}
+    if scope is not None:
+        data["scope"] = scope
+    if audience is not None:
+        data["audience"] = audience
+
+    response = tc.post(
+        "/oauth2/token",
+        data=data,
+        headers=_basic_auth_header(client_id, b64(client_secret)),
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["access_token"]
 
 
 def _get_consent_token(

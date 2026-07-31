@@ -16,6 +16,43 @@ def _b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+def _b64url_decode(data: str) -> bytes:
+    """Base64url decode padded JWT segments."""
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(f"{data}{padding}")
+
+
+def _parse_jwt(
+    token: str,
+) -> tuple[dict[str, Any], dict[str, Any], bytes, bytes] | None:
+    """Parse a JWT into header, claims, signing input, and signature."""
+    try:
+        header_b64, payload_b64, signature_b64 = token.split(".")
+        header = json.loads(_b64url_decode(header_b64))
+        claims = json.loads(_b64url_decode(payload_b64))
+        signature = _b64url_decode(signature_b64)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(header, dict) or not isinstance(claims, dict):
+        return None
+
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    return header, claims, signing_input, signature
+
+
+def decode_jwt_without_verification(
+    token: str,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Decode a JWT header and claims without verifying its signature."""
+    parsed_token = _parse_jwt(token)
+    if parsed_token is None:
+        return None
+
+    header, claims, _, _ = parsed_token
+    return header, claims
+
+
 def get_algorithm(alg: str) -> Algorithm:
     """Convert an algorithm name string to a SymmetricAlgorithm or AsymmetricAlgorithm."""
     if alg.startswith("HS"):
@@ -32,6 +69,39 @@ def get_algorithm(alg: str) -> Algorithm:
 def is_symmetric(algorithm: Algorithm) -> bool:
     """Check if an algorithm enum is symmetric (HMAC-based)."""
     return isinstance(algorithm, SymmetricAlgorithm)
+
+
+def verify_jwt(
+    token: str,
+    algorithm: Algorithm,
+    secret: bytes | None,
+    public_key: bytes | object | None,
+) -> dict[str, Any] | None:
+    """Verify a JWT signature and return its claims if it is valid."""
+    parsed_token = _parse_jwt(token)
+    if parsed_token is None:
+        return None
+
+    header, claims, signing_input, signature = parsed_token
+    if header.get("alg") != algorithm.name:
+        return None
+
+    try:
+        if isinstance(algorithm, SymmetricAlgorithm):
+            if secret is None:
+                return None
+            is_valid = algorithm.verify(secret, signing_input, signature)
+        else:
+            if public_key is None:
+                return None
+            is_valid = algorithm.verify(public_key, signing_input, signature)
+    except Exception:
+        return None
+
+    if not is_valid:
+        return None
+
+    return claims
 
 
 def create_jwt(

@@ -12,7 +12,12 @@ from basic_oauth2_server.rate_limiter import RateLimiter
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Enforce rate limiting on OAuth token and authorization endpoints."""
 
-    RATE_LIMITED_PATHS = {"/oauth2/token", "/authorize", "/authorize/confirm"}
+    RATE_LIMITED_PATHS = {
+        "/oauth2/token",
+        "/oauth2/introspect",
+        "/authorize",
+        "/authorize/confirm",
+    }
 
     def __init__(
         self,

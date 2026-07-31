@@ -1,15 +1,18 @@
 """FastAPI OAuth server implementation."""
 
 import logging
-from typing import Annotated
+import time
+from typing import Annotated, Any
 from urllib.parse import urlencode
 
+from cryptography.hazmat.primitives import serialization
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from jws_algorithms import SymmetricAlgorithm
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import get_user, init_db
+from basic_oauth2_server.db import Client, get_client, get_user, init_db
 from basic_oauth2_server.exceptions import (
     AuthorizationRedirectException,
     InvalidClientException,
@@ -21,6 +24,11 @@ from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.middleware import (
     RateLimitMiddleware,
     TokenCacheControlMiddleware,
+)
+from basic_oauth2_server.jwt import (
+    decode_jwt_without_verification,
+    get_algorithm,
+    verify_jwt,
 )
 from .consent_token import (
     verify_consent_token,
@@ -90,10 +98,6 @@ def create_app(config: ServerConfig) -> FastAPI:
         )
 
     # TODO: Read about /.well-known/oauth-authorization-server for advertising endpoints.
-    # TODO: Add token revocation (maybe not? For my usecase this seems useless) endpoint?
-    # TODO: Add token introspection endpoint, that allows to verify without
-    # having the secret values available or algorithms implemented. Not sure
-    # if really useful. I'll have to read about what the standard here is.
     @app.get("/.well-known/jwks.json")
     async def jwks_endpoint() -> JSONResponse:
         """Serve the JSON Web Key Set for configured asymmetric keys."""
@@ -259,6 +263,27 @@ def create_app(config: ServerConfig) -> FastAPI:
             case _:
                 raise InvalidGrantException("Unsupported grant_type")
 
+    @app.post("/oauth2/introspect")
+    async def introspect_endpoint(
+        token: Annotated[str, Form()],
+        client_id: Annotated[str | None, Form()] = None,
+        client_secret: Annotated[str | None, Form()] = None,
+        client_credentials: Annotated[
+            HTTPBasicCredentials | None, Depends(token_security)
+        ] = None,
+    ) -> JSONResponse:
+        """Inspect the token to return its claims and status."""
+        _authenticate_client(
+            config=config,
+            client_id=client_id,
+            client_secret=client_secret,
+            client_credentials=client_credentials,
+        )
+        claims = _get_active_token_claims(config=config, token=token)
+        if claims is None:
+            return JSONResponse(content={"active": False})
+        return JSONResponse(content={"active": True, **claims})
+
     return app
 
 
@@ -278,3 +303,80 @@ def run_server(config: ServerConfig) -> None:  # pragma: no cover
 
     app = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port)
+
+
+def _authenticate_client(
+    config: ServerConfig,
+    client_id: str | None,
+    client_secret: str | None,
+    client_credentials: HTTPBasicCredentials | None,
+) -> Client:
+    """Authenticate a client using HTTP Basic auth or form credentials."""
+    effective_client_id = (
+        client_credentials.username if client_credentials else client_id
+    )
+    effective_client_secret = (
+        client_credentials.password if client_credentials else client_secret
+    )
+    if not effective_client_id or not effective_client_secret:
+        raise InvalidClientException(
+            "Client authentication failed: missing credentials"
+        )
+
+    client = get_client(config.db_path, effective_client_id)
+    if not client or not client.verify_client_secret(effective_client_secret):
+        raise InvalidClientException("Client authentication failed")
+    return client
+
+
+def _get_active_token_claims(config: ServerConfig, token: str) -> dict[str, Any] | None:
+    """Return verified claims for an active token, or None when inactive."""
+    decoded_token = decode_jwt_without_verification(token)
+    if decoded_token is None:
+        return None
+
+    header, claims = decoded_token
+    algorithm_name = header.get("alg")
+    token_client_id = claims.get("client_id")
+    if not isinstance(algorithm_name, str) or not isinstance(token_client_id, str):
+        return None
+
+    client = get_client(config.db_path, token_client_id)
+    if not client or client.algorithm != algorithm_name:
+        return None
+
+    try:
+        algorithm = get_algorithm(client.algorithm)
+    except ValueError:
+        return None
+    if isinstance(algorithm, SymmetricAlgorithm):
+        signing_secret = client.get_signing_secret()
+        if signing_secret is None:
+            return None
+        verified_claims = verify_jwt(
+            token, algorithm=algorithm, secret=signing_secret, public_key=None
+        )
+    else:
+        try:
+            private_key, _ = config.load_private_key(algorithm)
+            public_key = _derive_public_key(private_key)
+        except Exception:
+            return None
+        verified_claims = verify_jwt(
+            token, algorithm=algorithm, secret=None, public_key=public_key
+        )
+
+    if verified_claims is None:
+        return None
+
+    exp = verified_claims.get("exp")
+    if not isinstance(exp, (int, float)) or exp <= time.time():
+        return None
+
+    return verified_claims
+
+
+def _derive_public_key(private_key: bytes) -> Any:
+    """Derive a public key object from PEM-encoded private key bytes."""
+    loaded_private_key = serialization.load_pem_private_key(private_key, password=None)
+    return loaded_private_key.public_key()
