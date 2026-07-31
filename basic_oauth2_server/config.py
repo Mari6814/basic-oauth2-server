@@ -157,8 +157,8 @@ def ensure_app_key() -> None:
         return None
     raw = secrets.token_bytes(32)
     b64 = base64.b64encode(raw).decode()
-    os.environ["APP_KEY"] = b64
-    print(f"APP_KEY={b64}")
+    os.environ["APP_KEY"] = f"base64:{b64}"
+    print(f"APP_KEY=base64:{b64}")
     print(
         "WARNING: APP_KEY was not set. A temporary key has been generated for this "
         "session. Add the line above to your environment (e.g. export APP_KEY=...) "
@@ -174,14 +174,9 @@ def get_app_key() -> bytes:
     if not key:
         raise ValueError("APP_KEY environment variable is required")
 
-    # TODO (bug?): I guess that there might be potential for confusion
-    # if somebody tries to use a raw string that happens to be base64,
-    # but I don't think that its worth my time. I'll think about if I
-    # want to handle this better.
-    try:
-        key_bytes = base64.b64decode(key)
-    except Exception:
-        # Treat as raw string if not valid base64
+    if key.startswith("base64:"):
+        key_bytes = base64.b64decode(key[len("base64:") :])
+    else:
         key_bytes = key.encode("utf-8")
 
     if len(key_bytes) < 32:

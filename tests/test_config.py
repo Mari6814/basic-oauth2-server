@@ -1,5 +1,6 @@
 """Tests for configuration management."""
 
+import base64
 import os
 from pathlib import Path
 
@@ -265,6 +266,7 @@ class TestEnsureAppKey:
         ensure_app_key()
         key = os.environ.get("APP_KEY")
         assert key is not None
+        assert key.startswith("base64:")
         captured = capsys.readouterr()
         assert f"APP_KEY={key}" in captured.out
         assert "WARNING" in captured.err
@@ -276,11 +278,26 @@ class TestGetAppKey:
         with pytest.raises(ValueError, match="APP_KEY"):
             get_app_key()
 
-    def test_returns_non_base64_value_as_utf8(self, monkeypatch: MonkeyPatch) -> None:
-        # 32-character plain text — not valid base64, so it falls back to UTF-8 encoding
+    def test_returns_raw_utf8_value(self, monkeypatch: MonkeyPatch) -> None:
+        """Raw APP_KEY values are encoded as UTF-8 bytes."""
         monkeypatch.setenv("APP_KEY", "not!!!base64_but_long_enough!!!!")
         key = get_app_key()
         assert key == b"not!!!base64_but_long_enough!!!!"
+
+    def test_decodes_base64_prefixed_value(self, monkeypatch: MonkeyPatch) -> None:
+        """APP_KEY values with a base64: prefix are base64-decoded."""
+        raw = b"test-app-key-1234567890_padded!!"
+        monkeypatch.setenv("APP_KEY", f"base64:{base64.b64encode(raw).decode()}")
+        key = get_app_key()
+        assert key == raw
+
+    def test_treats_valid_base64_text_as_raw_utf8(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Bare APP_KEY values are not base64-decoded even if they look valid."""
+        monkeypatch.setenv("APP_KEY", "SuperSecretKeyThatHappensToBeBase64==")
+        key = get_app_key()
+        assert key == b"SuperSecretKeyThatHappensToBeBase64=="
 
     def test_raises_if_key_too_short(self, monkeypatch: MonkeyPatch) -> None:
         monkeypatch.setenv("APP_KEY", "not!!!base64")

@@ -31,9 +31,7 @@ from basic_oauth2_server.exceptions import InvalidGrantException
 
 @pytest.fixture(autouse=True)
 def app_key() -> None:
-    os.environ["APP_KEY"] = base64.b64encode(
-        b"test-app-key-1234567890_padded!!"
-    ).decode()
+    os.environ["APP_KEY"] = "test-app-key-1234567890_padded!!"
 
 
 @pytest.fixture

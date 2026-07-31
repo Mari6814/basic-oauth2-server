@@ -32,9 +32,7 @@ def _b64url_encode(data: bytes) -> str:
 @pytest.fixture(autouse=True)
 def set_app_key(monkeypatch: MonkeyPatch) -> None:
     """Set APP_KEY env var for all tests in this module."""
-    monkeypatch.setenv(
-        "APP_KEY", base64.b64encode(b"test-consent-key-32bytes!!!!!!!!").decode()
-    )
+    monkeypatch.setenv("APP_KEY", "test-consent-key-32bytes!!!!!!!!")
 
 
 @pytest.fixture
@@ -219,9 +217,7 @@ class TestVerifyRejectsSignature:
     def test_wrong_key(
         self, valid_token: str, config: ServerConfig, monkeypatch: MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(
-            "APP_KEY", base64.b64encode(b"different-key-32-bytes!!!!!!!!!!").decode()
-        )
+        monkeypatch.setenv("APP_KEY", "different-key-32-bytes!!!!!!!!!!")
         with pytest.raises(InvalidRequestException, match="signature"):
             verify_consent_token(valid_token, config=config)
 
