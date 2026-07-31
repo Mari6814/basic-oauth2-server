@@ -20,7 +20,7 @@ from basic_oauth2_server.db import (
     create_user,
 )
 from basic_oauth2_server.exceptions import (
-    InvalidAudienceException,
+    AuthorizationRedirectException,
     InvalidClientException,
     InvalidGrantException,
     InvalidRequestException,
@@ -92,8 +92,32 @@ class TestHandleAuthorize:
                 config=config,
             )
 
-    def test_invalid_audience_raises(self, config: ServerConfig) -> None:
-        with pytest.raises(InvalidAudienceException, match="Invalid audience"):
+    def test_invalid_scope_raises_redirect_exception(
+        self, config: ServerConfig
+    ) -> None:
+        with pytest.raises(AuthorizationRedirectException) as exc_info:
+            handle_authorize(
+                authorized_username="testuser",
+                client_id="test-client",
+                redirect_uri="https://example.com/callback",
+                code_challenge="abc123",
+                code_challenge_method="S256",
+                scope=["admin"],
+                audience=None,
+                state="state123",
+                config=config,
+            )
+
+        exc = exc_info.value
+        assert exc.redirect_uri == "https://example.com/callback"
+        assert exc.error == "invalid_scope"
+        assert exc.description == "Invalid scopes: admin"
+        assert exc.state == "state123"
+
+    def test_invalid_audience_raises_redirect_exception(
+        self, config: ServerConfig
+    ) -> None:
+        with pytest.raises(AuthorizationRedirectException) as exc_info:
             handle_authorize(
                 authorized_username="testuser",
                 client_id="test-client",
@@ -105,6 +129,12 @@ class TestHandleAuthorize:
                 state="state123",
                 config=config,
             )
+
+        exc = exc_info.value
+        assert exc.redirect_uri == "https://example.com/callback"
+        assert exc.error == "invalid_request"
+        assert exc.description == "Invalid audience: https://evil.example.com"
+        assert exc.state == "state123"
 
 
 class TestHandleAuthorizationCode:

@@ -17,6 +17,23 @@ class OAuth2Exception(Exception):
         self.status_code = status_code
 
 
+class AuthorizationRedirectException(Exception):
+    """Raised when an authorization error should redirect to redirect_uri."""
+
+    def __init__(
+        self,
+        redirect_uri: str,
+        error: str,
+        description: str,
+        state: str | None = None,
+    ):
+        super().__init__(description)
+        self.redirect_uri = redirect_uri
+        self.error = error
+        self.description = description
+        self.state = state
+
+
 class InvalidRequestException(OAuth2Exception):
     """Raised when the request is invalid.
 

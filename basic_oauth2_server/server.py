@@ -2,6 +2,7 @@
 
 import logging
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -10,6 +11,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import get_user, init_db
 from basic_oauth2_server.exceptions import (
+    AuthorizationRedirectException,
     InvalidClientException,
     InvalidGrantException,
     InvalidRequestException,
@@ -66,6 +68,18 @@ def create_app(config: ServerConfig) -> FastAPI:
             exc.error, exc.description or "", status_code=exc.status_code
         )
 
+    @app.exception_handler(AuthorizationRedirectException)
+    async def authorization_redirect_handler(
+        request: Request, exc: AuthorizationRedirectException
+    ) -> RedirectResponse:
+        params = {"error": exc.error, "error_description": exc.description}
+        if exc.state:
+            params["state"] = exc.state
+        return RedirectResponse(
+            url=f"{exc.redirect_uri}?{urlencode(params)}",
+            status_code=302,
+        )
+
     @app.exception_handler(Exception)
     async def generic_exception_handler(
         request: Request, exc: Exception
@@ -112,9 +126,6 @@ def create_app(config: ServerConfig) -> FastAPI:
         # TODO (non-standard): `state` is declared required here. Have to document that this is on purpose and to simplify things, we always require state. I'm pretty sure that
         # most providers also require it. Might have to read up on how they handle
         # missing state?
-        # TODO (non-standard): Authorization errors (bad scope,
-        # invalid audience, etc.) are raised as JSON. When redirect_uri is valid
-        # and registered, errors should 302 back to the client with ?error=...
         if response_type != "code":
             raise InvalidRequestException("Unsupported response_type")
 

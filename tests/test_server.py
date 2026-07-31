@@ -1085,7 +1085,7 @@ def test_authorize_invalid_client(client_with_db: TestClient) -> None:
 
 
 def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
-    """Test that /authorize rejects invalid scopes."""
+    """Test that /authorize redirects invalid scopes to the client."""
     response = client_with_db.get(
         "/authorize",
         params={
@@ -1098,9 +1098,46 @@ def test_authorize_invalid_scope(client_with_db: TestClient) -> None:
             "state": "test-state",
         },
         headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
     )
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_scope"
+    assert response.status_code == 302
+    location = response.headers["location"]
+    parsed = urlparse(location)
+    query = parse_qs(parsed.query)
+    assert parsed.scheme == "http"
+    assert parsed.netloc == "localhost"
+    assert parsed.path == "/callback"
+    assert query["error"] == ["invalid_scope"]
+    assert query["error_description"] == ["Invalid scopes: admin"]
+    assert query["state"] == ["test-state"]
+
+
+def test_authorize_invalid_audience_redirects(client_with_db: TestClient) -> None:
+    """Test that /authorize redirects invalid audience errors to the client."""
+    response = client_with_db.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": "test-client",
+            "redirect_uri": "http://localhost/callback",
+            "code_challenge": "test",
+            "code_challenge_method": "S256",
+            "audience": "https://wrong.com",
+            "state": "test-state",
+        },
+        headers=_basic_auth_header("testuser", "testpass"),
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers["location"]
+    parsed = urlparse(location)
+    query = parse_qs(parsed.query)
+    assert parsed.scheme == "http"
+    assert parsed.netloc == "localhost"
+    assert parsed.path == "/callback"
+    assert query["error"] == ["invalid_request"]
+    assert query["error_description"] == ["Invalid audience: https://wrong.com"]
+    assert query["state"] == ["test-state"]
 
 
 def test_authorize_unsupported_pkce_method_rejected(client_with_db: TestClient) -> None:

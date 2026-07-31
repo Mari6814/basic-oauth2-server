@@ -9,11 +9,10 @@ from basic_oauth2_server.consent_token import create_consent_token
 
 from .token_service import create_access_token_for_client
 from .exceptions import (
-    InvalidAudienceException,
+    AuthorizationRedirectException,
     InvalidClientException,
     InvalidRequestException,
     InvalidGrantException,
-    InvalidScopeException,
 )
 from .config import ServerConfig
 from .db import (
@@ -84,12 +83,22 @@ def handle_authorize(
         allowed_scopes = client.get_scopes_list()
         invalid = [s for s in requested_scopes if s not in allowed_scopes]
         if invalid:
-            raise InvalidScopeException(f"Invalid scopes: {', '.join(invalid)}")
+            raise AuthorizationRedirectException(
+                redirect_uri=redirect_uri,
+                error="invalid_scope",
+                description=f"Invalid scopes: {', '.join(invalid)}",
+                state=state,
+            )
 
     if audience:
         allowed_audiences = client.get_audiences_list()
         if audience not in allowed_audiences:
-            raise InvalidAudienceException(f"Invalid audience: {audience}")
+            raise AuthorizationRedirectException(
+                redirect_uri=redirect_uri,
+                error="invalid_request",
+                description=f"Invalid audience: {audience}",
+                state=state,
+            )
 
     consent_token = create_consent_token(
         username=authorized_username,
