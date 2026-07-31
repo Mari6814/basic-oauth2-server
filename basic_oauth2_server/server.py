@@ -221,11 +221,6 @@ def create_app(config: ServerConfig) -> FastAPI:
         effective_client_secret = (
             client_credentials.password if client_credentials else client_secret
         )
-        # TODO (non-standard): PKCE apparently does not require a client_secret?
-        # Need to verify if there are flows that need client_secret, or if
-        # all authorization_code flows only need the verifier. In this
-        # basic implementation I want to keep it simple and only implement
-        # one flavor if there are multiple.
         if not effective_client_id or not effective_client_secret:
             raise InvalidClientException(
                 "Client authentication failed: missing credentials"

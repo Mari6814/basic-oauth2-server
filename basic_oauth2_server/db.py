@@ -62,7 +62,7 @@ class Client(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # The unique client identifier (public). This is the "username" for a client itself (not the user)
     client_id: Mapped[str] = mapped_column(String(255), primary_key=True, unique=True)
-    # HMAC-SHA256 (keyed with APP_KEY) of client secret - the "password" used to obtain access tokens
+    # HMAC-SHA256 (keyed with APP_KEY) of client secret. The "password" used to obtain access tokens. All clients must have a secret; public clients are not supported on purpose.
     client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Algorithm to use for signing (HS256, RS256, EdDSA, etc.)
     # The client chooses based on their verification capabilities
