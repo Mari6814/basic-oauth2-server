@@ -66,6 +66,33 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.add_middleware(RateLimitMiddleware, trust_proxy=config.trust_proxy)
     init_db(config.db_path)
     jwks_document = build_jwks(config)
+    well_known_document = {
+        "issuer": config.app_url,
+        "authorization_endpoint": f"{config.app_url}/authorize",
+        "token_endpoint": f"{config.app_url}/oauth2/token",
+        "jwks_uri": f"{config.app_url}/.well-known/jwks.json",
+        "introspection_endpoint": f"{config.app_url}/oauth2/introspect",
+        "revocation_endpoint": f"{config.app_url}/oauth2/revoke",
+        "response_types_supported": ["code"],
+        "grant_types_supported": [
+            "authorization_code",
+            "client_credentials",
+            "refresh_token",
+        ],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post",
+        ],
+        "code_challenge_methods_supported": ["S256"],
+        "introspection_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post",
+        ],
+        "revocation_endpoint_auth_methods_supported": [
+            "client_secret_basic",
+            "client_secret_post",
+        ],
+    }
     logger.info("OAuth server initialized with db: %s", config.db_path)
 
     @app.exception_handler(OAuth2Exception)
@@ -104,11 +131,15 @@ def create_app(config: ServerConfig) -> FastAPI:
             "server_error", "An unexpected error occurred", status_code=500
         )
 
-    # TODO: Read about /.well-known/oauth-authorization-server for advertising endpoints.
     @app.get("/.well-known/jwks.json")
     async def jwks_endpoint() -> JSONResponse:
         """Serve the JSON Web Key Set for configured asymmetric keys."""
         return JSONResponse(content=jwks_document)
+
+    @app.get("/.well-known/oauth-authorization-server")
+    async def oauth_authorization_server_metadata_endpoint() -> JSONResponse:
+        """Serve OAuth server metadata."""
+        return JSONResponse(content=well_known_document)
 
     @app.get("/authorize")
     async def authorize_endpoint(

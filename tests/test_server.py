@@ -583,6 +583,63 @@ def test_token_includes_issuer_claim(client_with_issuer: TestClient) -> None:
     assert payload["sub"] == "issuer-client"
 
 
+def test_well_known_returns_200(client_with_db: TestClient) -> None:
+    """The OAuth metadata endpoint returns success."""
+    response = client_with_db.get("/.well-known/oauth-authorization-server")
+
+    assert response.status_code == 200
+
+
+def test_well_known_issuer(client_with_issuer: TestClient) -> None:
+    """The metadata issuer matches the configured app URL."""
+    response = client_with_issuer.get("/.well-known/oauth-authorization-server")
+    config = client_with_issuer.app.state.config
+
+    assert response.status_code == 200
+    assert response.json()["issuer"] == config.app_url
+
+
+def test_well_known_endpoints_present(client_with_issuer: TestClient) -> None:
+    """The metadata document includes all configured endpoint URLs."""
+    response = client_with_issuer.get("/.well-known/oauth-authorization-server")
+    config = client_with_issuer.app.state.config
+
+    assert response.status_code == 200
+    data = response.json()
+    endpoint_fields = (
+        "issuer",
+        "authorization_endpoint",
+        "token_endpoint",
+        "jwks_uri",
+        "introspection_endpoint",
+        "revocation_endpoint",
+    )
+
+    for field in endpoint_fields:
+        assert field in data
+        assert data[field].startswith(config.app_url)
+
+
+def test_well_known_grant_types(client_with_db: TestClient) -> None:
+    """The metadata document advertises supported grant types."""
+    response = client_with_db.get("/.well-known/oauth-authorization-server")
+
+    assert response.status_code == 200
+    assert response.json()["grant_types_supported"] == [
+        "authorization_code",
+        "client_credentials",
+        "refresh_token",
+    ]
+
+
+def test_well_known_code_challenge_methods(client_with_db: TestClient) -> None:
+    """The metadata document advertises the supported PKCE method."""
+    response = client_with_db.get("/.well-known/oauth-authorization-server")
+
+    assert response.status_code == 200
+    assert response.json()["code_challenge_methods_supported"] == ["S256"]
+
+
 def test_token_endpoint_basic_auth(client_with_db: TestClient) -> None:
     """Test successful token request using HTTP Basic auth."""
 
