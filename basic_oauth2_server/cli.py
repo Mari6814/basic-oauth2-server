@@ -161,6 +161,12 @@ def main(args: list[str] | None = None) -> int:
         action="append",
         help="Allowed redirect URIs for the default client (can be repeated)",
     )
+    serve_parser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        help="Write default client environment variables to file instead of stdout (used with --create-default-client)",
+    )
 
     # Default user bootstrapping
     serve_parser.add_argument(
@@ -242,6 +248,12 @@ def main(args: list[str] | None = None) -> int:
         dest="redirect_uris",
         action="append",
         help="Add allowed redirect URI for authorization code flow (can be specified multiple times)",
+    )
+    create_parser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        help="Write environment variables to file instead of stdout",
     )
 
     # clients list
@@ -350,6 +362,24 @@ def main(args: list[str] | None = None) -> int:
     return 0
 
 
+def _output_client_env(
+    output: str | None,
+    lines: list[str],
+    client_id: str,
+    context: str,
+) -> None:
+    """Write client environment variables to stdout or a file."""
+    if output:
+        with open(output, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"Wrote {len(lines)} variable(s) for {context} '{client_id}' to {output}")
+    else:
+        print(f"Environment variables for {context} '{client_id}':")
+        print()
+        for line in lines:
+            print(f"\t{line}")
+
+
 def _ensure_default_client(args: argparse.Namespace) -> None:
     """Create the default OAuth client if it does not already exist."""
     client_id = args.default_client_id
@@ -417,13 +447,17 @@ def _ensure_default_client(args: argparse.Namespace) -> None:
         )
 
     print(f"Created default client '{client_id}'")
+    env_lines: list[str] = []
     if generated_secret:
-        print(
+        env_lines.append(
             f"OAUTH_DEFAULT_CLIENT_SECRET={base64.b64encode(client_secret_raw).decode()}"
         )
     if is_symmetric(algorithm) and generated_signing_secret and signing_secret_raw:
-        print(f"JWT_ALGORITHM={algorithm.name}")
-        print(f'JWT_SECRET="hex:{signing_secret_raw.hex()}"')
+        # TODO: Missing comments that these are more informational as they allow the client to issue tokens themselves. They do not need to be given out!
+        env_lines.append(f"JWT_ALGORITHM={algorithm.name}")
+        env_lines.append(f'JWT_SECRET="hex:{signing_secret_raw.hex()}"')
+    if env_lines:
+        _output_client_env(args.output, env_lines, client_id, "default client")
 
 
 def _ensure_default_user(args: argparse.Namespace) -> None:
@@ -512,6 +546,7 @@ def _cmd_clients(args: argparse.Namespace) -> int:
             audiences=args.audiences,
             redirect_uris=args.redirect_uris,
             db=args.db,
+            output=getattr(args, "output", None),
         )
         return _cmd_clients_create(create_args)
     elif args.clients_command == "list":
@@ -533,6 +568,7 @@ class ClientCreateArgs(argparse.Namespace):
     audiences: list[str] | None
     redirect_uris: list[str] | None
     db: str
+    output: str | None
 
 
 def _cmd_clients_create(args: ClientCreateArgs) -> int:
@@ -573,14 +609,17 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
             title=args.title,
         )
 
-    print(f"OAUTH_CLIENT_ID={client.client_id}")
+    # TODO: The OAUTH_CLIENT_* ones should be commented with info about how they should be used
+    env_lines: list[str] = [f"OAUTH_CLIENT_ID={client.client_id}"]
     if not args.client_secret and client_secret:
-        # print if we auto-generated the client secret, but not if it was provided by the user
-        print(f"OAUTH_CLIENT_SECRET={base64.b64encode(client_secret).decode()}")
+        env_lines.append(
+            f"OAUTH_CLIENT_SECRET={base64.b64encode(client_secret).decode()}"
+        )
     if is_symmetric(algorithm) and not args.signing_secret and signing_secret:
-        # print if we auto-generated the signing secret, but not if it was provided by the user
-        print(f"JWT_ALGORITHM={algorithm.name}")
-        print(f'JWT_SECRET="hex:{signing_secret.hex()}"')
+        # TODO: Comments should be added that these are not necessary as they allow them to issue and verify tokens directly.
+        env_lines.append(f"JWT_ALGORITHM={algorithm.name}")
+        env_lines.append(f'JWT_SECRET="hex:{signing_secret.hex()}"')
+    _output_client_env(args.output, env_lines, client.client_id, "client")
 
     return 0
 
