@@ -4,6 +4,7 @@ import base64
 import bcrypt
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -31,6 +32,8 @@ from basic_oauth2_server.config import ServerConfig, get_app_key
 from basic_oauth2_server.crypto import decrypt_from_base64, encrypt_to_base64
 from basic_oauth2_server.exceptions import InvalidGrantException
 from basic_oauth2_server.jwt import Algorithm, create_access_token, get_algorithm
+
+logger = logging.getLogger(__name__)
 
 
 class Base(DeclarativeBase):
@@ -246,10 +249,17 @@ class DbSession:
 
     def __enter__(self) -> "DbSession":
         """Return the wrapped session context."""
+        logger.debug("DB session opened (%d)", id(self._session))
         return self
 
     def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> None:
         """Close the underlying SQLAlchemy session."""
+        if exc_type is not None:
+            logger.debug(
+                "DB session closed with exception (%d): %s", id(self._session), exc_type.__name__
+            )
+        else:
+            logger.debug("DB session closed (%d)", id(self._session))
         self._session.close()
 
 
@@ -303,6 +313,9 @@ class ClientRepository:
         self._db._session.add(client)
         self._db._session.commit()
         self._db._session.refresh(client)
+        logger.info(
+            "Client created: %s (algorithm=%s)", client_id, algorithm.name
+        )
         return client
 
     def list(self) -> list[Client]:
@@ -313,9 +326,11 @@ class ClientRepository:
         """Delete a client by ID. Returns True if deleted, False if not found."""
         client = self._db._session.get(Client, client_id)
         if client is None:
+            logger.warning("Client not found for deletion: %s", client_id)
             return False
         self._db._session.delete(client)
         self._db._session.commit()
+        logger.info("Client deleted: %s", client_id)
         return True
 
     def touch_last_used(self, client_id: str) -> None:
@@ -324,6 +339,7 @@ class ClientRepository:
         if client is not None:
             client.last_used_at = datetime.now(timezone.utc)
             self._db._session.commit()
+            logger.debug("Client last_used updated: %s", client_id)
 
 
 class UserRepository:
@@ -344,6 +360,7 @@ class UserRepository:
         self._db._session.add(user)
         self._db._session.commit()
         self._db._session.refresh(user)
+        logger.info("User created: %s", username)
         return user
 
     def list(self) -> list[User]:
@@ -354,19 +371,23 @@ class UserRepository:
         """Delete a user by username. Returns True if deleted, False if not found."""
         user = self._db._session.get(User, username)
         if user is None:
+            logger.warning("User not found for deletion: %s", username)
             return False
         self._db._session.delete(user)
         self._db._session.commit()
+        logger.info("User deleted: %s", username)
         return True
 
     def update_password(self, username: str, password: str) -> bool:
         """Update a user's password. Returns True if updated, False if the user was not found."""
         user = self._db._session.get(User, username)
         if user is None:
+            logger.warning("User not found for password update: %s", username)
             return False
         user.set_password(password)
         user.updated_at = datetime.now(timezone.utc)
         self._db._session.commit()
+        logger.info("Password updated for user: %s", username)
         return True
 
 
@@ -427,7 +448,11 @@ class TokenRepository:
             self._db._session.commit()
         except IntegrityError as exc:
             self._db._session.rollback()
+            logger.warning("Consent token replay for jti=%s", consent_jti)
             raise InvalidGrantException("Consent token already used") from exc
+        logger.info(
+            "Authorization code created for client=%s user=%s", client_id, user_id
+        )
         return code
 
     def consume_authorization_code(self, code: str) -> AuthorizationCode | None:
@@ -444,8 +469,10 @@ class TokenRepository:
             .returning(AuthorizationCode.code)
         ).scalar()
         if returned_code is None:
+            logger.debug("Authorization code not found or invalid: %.8s...", code)
             return None
         self._db._session.commit()
+        logger.info("Authorization code consumed: %.8s...", code)
         return self._db._session.get(AuthorizationCode, returned_code)
 
     def get_authorization_code(self, code: str) -> AuthorizationCode | None:
@@ -464,6 +491,7 @@ class TokenRepository:
         )
         self._db._session.execute(delete(AuthorizationCode).where(prune_predicate))
         self._db._session.commit()
+        logger.info("Pruned %d authorization codes", int(deleted_count or 0))
         return int(deleted_count or 0)
 
     def consume_refresh_token(self, token: str) -> RefreshToken | None:
@@ -497,7 +525,13 @@ class TokenRepository:
         )
         self._db._session.commit()
         if deleted_token_row is None:
+            logger.debug("Refresh token not found or expired: %.8s...", token)
             return None
+        logger.info(
+            "Refresh token consumed for client=%s user=%s",
+            deleted_token_row["client_id"],
+            deleted_token_row["user_id"],
+        )
         return RefreshToken(**deleted_token_row)
 
     def delete_refresh_token(self, token: str) -> bool:
@@ -507,6 +541,7 @@ class TokenRepository:
             return False
         self._db._session.delete(refresh_token)
         self._db._session.commit()
+        logger.info("Refresh token deleted: %.8s...", token)
         return True
 
     def prune_refresh_tokens(self) -> int:
@@ -518,6 +553,7 @@ class TokenRepository:
         )
         self._db._session.execute(delete(RefreshToken).where(prune_predicate))
         self._db._session.commit()
+        logger.info("Pruned %d refresh tokens", int(deleted_count or 0))
         return int(deleted_count or 0)
 
     def issue_access_token(
@@ -540,7 +576,7 @@ class TokenRepository:
                 raise ValueError(
                     f"Client '{client.client_id}' has no signing secret configured"
                 )
-            return create_access_token(
+            token = create_access_token(
                 subject=subject,
                 algorithm=algorithm,
                 secret=signing_secret,
@@ -550,19 +586,26 @@ class TokenRepository:
                 issuer=self._config.app_url,
                 client_id=client.client_id,
             )
-
-        private_key, kid = self._config.load_private_key(algorithm)
-        return create_access_token(
-            subject=subject,
-            algorithm=algorithm,
-            private_key=private_key,
-            scopes=scopes,
-            audience=audience,
-            expires_in=self._config.token_expires_in,
-            kid=kid,
-            issuer=self._config.app_url,
-            client_id=client.client_id,
+        else:
+            private_key, kid = self._config.load_private_key(algorithm)
+            token = create_access_token(
+                subject=subject,
+                algorithm=algorithm,
+                private_key=private_key,
+                scopes=scopes,
+                audience=audience,
+                expires_in=self._config.token_expires_in,
+                kid=kid,
+                issuer=self._config.app_url,
+                client_id=client.client_id,
+            )
+        logger.info(
+            "Access token issued for client=%s subject=%s (alg=%s)",
+            client.client_id,
+            subject,
+            client.algorithm,
         )
+        return token
 
     def issue_refresh_token(
         self,
@@ -591,6 +634,12 @@ class TokenRepository:
             )
         )
         self._db._session.commit()
+        logger.info(
+            "Refresh token issued for client=%s user=%s (expires_in=%ds)",
+            client.client_id,
+            user_id,
+            self._config.refresh_token_expires_in,
+        )
         return token
 
 
@@ -631,6 +680,7 @@ class Database:
         self._db_path = db_path
         self._engine = engine
         self._session_factory = sessionmaker(bind=engine)
+        logger.info("Database configured: %s", db_path)
 
     def connect(self) -> DbSession:
         """Return a new database session wrapper."""
@@ -638,6 +688,7 @@ class Database:
             raise RuntimeError(
                 "Database not configured. Call database.configure(db_path) first."
             )
+        logger.debug("New DB session created")
         return DbSession(self._session_factory())
 
     def reset(self) -> None:
@@ -647,6 +698,7 @@ class Database:
         self._db_path = None
         self._engine = None
         self._session_factory = None
+        logger.info("Database reset")
 
 
 database = Database()

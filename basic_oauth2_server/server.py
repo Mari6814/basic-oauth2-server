@@ -59,6 +59,7 @@ authorize_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
 def get_db() -> Generator[DbSession, None, None]:
     """Yield a database session wrapper for the request."""
     with database.connect() as db:
+        logger.debug("FastAPI DB session acquired")
         yield db
 
 
