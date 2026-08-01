@@ -2,11 +2,14 @@
 
 import base64
 import json
+import logging
 import time
 from typing import Any
 import uuid
 
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
+
+logger = logging.getLogger(__name__)
 
 type Algorithm = SymmetricAlgorithm | AsymmetricAlgorithm
 
@@ -76,29 +79,67 @@ def verify_jwt(
     algorithm: Algorithm,
     secret: bytes | None,
     public_key: bytes | object | None,
+    issuer: str | None = None,
 ) -> dict[str, Any] | None:
-    """Verify a JWT signature and return its claims if it is valid."""
+    """Verify a JWT signature and standard claims, returning claims when valid.
+
+    The token must have the expected algorithm, a valid signature, and the
+    following claims: exp (in the future), iat, and jti. If an nbf claim is
+    present it must not be in the future. When issuer is provided, the iss
+    claim must be present and match it exactly.
+    """
     parsed_token = _parse_jwt(token)
     if parsed_token is None:
+        logger.debug("verify_jwt: failed to parse token")
         return None
 
     header, claims, signing_input, signature = parsed_token
     if header.get("alg") != algorithm.name:
+        logger.debug("verify_jwt: algorithm mismatch (token=%s, expected=%s)", header.get("alg"), algorithm.name)
         return None
 
     try:
         if isinstance(algorithm, SymmetricAlgorithm):
             if secret is None:
+                logger.debug("verify_jwt: no secret provided for symmetric algorithm")
                 return None
             is_valid = algorithm.verify(secret, signing_input, signature)
         else:
             if public_key is None:
+                logger.debug("verify_jwt: no public key provided for asymmetric algorithm")
                 return None
             is_valid = algorithm.verify(public_key, signing_input, signature)
     except Exception:
+        logger.debug("verify_jwt: exception during signature verification")
         return None
 
     if not is_valid:
+        logger.debug("verify_jwt: invalid signature")
+        return None
+
+    now = time.time()
+
+    exp = claims.get("exp")
+    if not isinstance(exp, (int, float)) or exp <= now:
+        logger.debug("verify_jwt: missing or expired exp claim (exp=%s)", exp)
+        return None
+
+    nbf = claims.get("nbf")
+    if nbf is not None:
+        if not isinstance(nbf, (int, float)) or nbf > now:
+            logger.debug("verify_jwt: nbf claim not yet valid (nbf=%s)", nbf)
+            return None
+
+    if not isinstance(claims.get("iat"), (int, float)):
+        logger.debug("verify_jwt: missing or invalid iat claim")
+        return None
+
+    if not isinstance(claims.get("jti"), str):
+        logger.debug("verify_jwt: missing or invalid jti claim")
+        return None
+
+    if issuer is not None and claims.get("iss") != issuer:
+        logger.debug("verify_jwt: issuer mismatch (token=%s, expected=%s)", claims.get("iss"), issuer)
         return None
 
     return claims

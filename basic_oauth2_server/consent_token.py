@@ -5,8 +5,6 @@ tempering by the client, all the parameters from the authorization request that 
 the user then can confirm or deny.
 """
 
-import base64
-import json
 import secrets
 import time
 from dataclasses import dataclass
@@ -16,7 +14,7 @@ from jws_algorithms import SymmetricAlgorithm
 
 from .config import ServerConfig, get_app_key
 from .exceptions import InvalidRequestException
-from .jwt import create_jwt
+from .jwt import create_jwt, verify_jwt
 
 CONSENT_TOKEN_EXPIRES_IN = 300
 ALGORITHM = SymmetricAlgorithm.HS512
@@ -76,6 +74,7 @@ def create_consent_token(
         "jti": jti,
         "sub": username,
         "iat": now,
+        "nbf": now,
         "exp": now + expires_in,
         "client_id": client_id,
         "redirect_uri": redirect_uri,
@@ -111,35 +110,18 @@ def verify_consent_token(token: str, config: ServerConfig) -> ConsentClaims:
         InvalidRequestException: If the token is malformed, has an invalid
             signature, or has expired.
     """
-    try:
-        header_b64, payload_b64, sig_b64 = token.split(".")
-    except ValueError:
+    claims = verify_jwt(
+        token,
+        algorithm=ALGORITHM,
+        secret=get_app_key(),
+        public_key=None,
+        issuer=config.app_url,
+    )
+    if claims is None:
         raise InvalidRequestException("Invalid consent token")
 
-    try:
-        header_bytes = base64.urlsafe_b64decode(header_b64 + "==").decode("utf-8")
-        header: dict[str, Any] = json.loads(header_bytes)
-        sig = base64.urlsafe_b64decode(sig_b64 + "==")
-        payload_bytes = base64.urlsafe_b64decode(payload_b64 + "==").decode("utf-8")
-        claims: dict[str, Any] = json.loads(payload_bytes)
-    except Exception:
-        raise InvalidRequestException("Invalid consent token")
-
-    if header.get("alg") != ALGORITHM.name:
-        raise InvalidRequestException("Invalid consent token algorithm")
-
-    key = get_app_key()
-    if not ALGORITHM.verify(key, f"{header_b64}.{payload_b64}", sig):
-        raise InvalidRequestException("Invalid consent token signature")
-
-    if "iss" not in claims or claims["iss"] != config.app_url:
-        raise InvalidRequestException("Invalid consent token issuer")
     if "aud" not in claims or claims["aud"] != config.app_url:
         raise InvalidRequestException("Invalid consent token audience")
-    if claims.get("exp", 0) < int(time.time()):
-        raise InvalidRequestException("Consent token has expired")
-    if claims.get("iat", 0) > int(time.time()):
-        raise InvalidRequestException("Consent token issued in the future")
 
     try:
         return ConsentClaims(

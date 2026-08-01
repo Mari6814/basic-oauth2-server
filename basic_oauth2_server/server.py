@@ -443,10 +443,6 @@ def _get_active_token_claims(config: ServerConfig, token: str) -> dict[str, Any]
     if verified_claims is None:
         return None
 
-    exp = verified_claims.get("exp")
-    if not isinstance(exp, (int, float)) or exp <= time.time():
-        return None
-
     return verified_claims
 
 

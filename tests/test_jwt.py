@@ -2,6 +2,7 @@
 
 import base64
 import json
+import time
 
 import pytest
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
@@ -11,6 +12,7 @@ from basic_oauth2_server.jwt import (
     create_jwt,
     get_algorithm,
     is_symmetric,
+    verify_jwt,
 )
 
 
@@ -99,8 +101,6 @@ def test_create_access_token() -> None:
 
 def test_create_jwt_with_expires_in() -> None:
     """Test that create_jwt sets exp when expires_in is provided."""
-    import time
-
     before = int(time.time())
     token = create_jwt(
         {"sub": "test"},
@@ -158,3 +158,117 @@ def test_create_access_token_without_audience() -> None:
     )
     payload = json.loads(_b64url_decode(token.split(".")[1]))
     assert "aud" not in payload
+
+
+def test_verify_jwt_rejects_expired_token() -> None:
+    """Expired tokens are rejected."""
+    token = create_jwt(
+        {"sub": "test", "exp": int(time.time()) - 60},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+    )
+
+    assert (
+        verify_jwt(
+            token,
+            algorithm=SymmetricAlgorithm.HS256,
+            secret=b"secret",
+            public_key=None,
+        )
+        is None
+    )
+
+
+def test_verify_jwt_rejects_future_nbf() -> None:
+    """Tokens before their not-before time are rejected."""
+    token = create_jwt(
+        {"sub": "test", "nbf": int(time.time()) + 60},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+    )
+
+    assert (
+        verify_jwt(
+            token,
+            algorithm=SymmetricAlgorithm.HS256,
+            secret=b"secret",
+            public_key=None,
+        )
+        is None
+    )
+
+
+def test_verify_jwt_accepts_past_nbf() -> None:
+    """Tokens after their not-before time are accepted."""
+    token = create_jwt(
+        {"sub": "test", "nbf": int(time.time()) - 60},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        expires_in=900,
+    )
+
+    claims = verify_jwt(
+        token,
+        algorithm=SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        public_key=None,
+    )
+
+    assert claims is not None
+    assert claims["sub"] == "test"
+
+
+def test_verify_jwt_rejects_mismatched_issuer() -> None:
+    """Tokens with the wrong issuer are rejected when an issuer is expected."""
+    token = create_jwt(
+        {"sub": "test", "iss": "https://issuer.example.com"},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+    )
+
+    assert (
+        verify_jwt(
+            token,
+            algorithm=SymmetricAlgorithm.HS256,
+            secret=b"secret",
+            public_key=None,
+            issuer="https://other.example.com",
+        )
+        is None
+    )
+
+
+def test_verify_jwt_accepts_matching_issuer() -> None:
+    """Tokens with a matching issuer are accepted."""
+    token = create_jwt(
+        {"sub": "test", "iss": "https://issuer.example.com"},
+        SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        expires_in=900,
+    )
+
+    claims = verify_jwt(
+        token,
+        algorithm=SymmetricAlgorithm.HS256,
+        secret=b"secret",
+        public_key=None,
+        issuer="https://issuer.example.com",
+    )
+
+    assert claims is not None
+    assert claims["iss"] == "https://issuer.example.com"
+
+
+def test_verify_jwt_rejects_missing_exp() -> None:
+    """Tokens without an exp claim are rejected."""
+    token = create_jwt({"sub": "test"}, SymmetricAlgorithm.HS256, secret=b"secret")
+
+    assert (
+        verify_jwt(
+            token,
+            algorithm=SymmetricAlgorithm.HS256,
+            secret=b"secret",
+            public_key=None,
+        )
+        is None
+    )

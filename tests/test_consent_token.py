@@ -118,6 +118,7 @@ class TestTokenStructure:
         assert payload["code_challenge_method"] == "S256"
         assert payload["state"] == "xyz"
         assert "iat" in payload
+        assert "nbf" in payload
         assert "exp" in payload
 
     def test_expiry_within_lifetime(self, valid_token: str) -> None:
@@ -175,7 +176,7 @@ class TestVerifyRoundTrip:
 
 class TestVerifyRejectsExpiry:
     def test_expired_token(self, expired_token: str, config: ServerConfig) -> None:
-        with pytest.raises(InvalidRequestException, match="expired"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(expired_token, config=config)
 
 
@@ -186,7 +187,7 @@ class TestVerifyRejectsSignature:
         payload["sub"] = "eve"
         tampered_payload_b64 = _b64url_encode(json.dumps(payload).encode())
         tampered_token = f"{header_b64}.{tampered_payload_b64}.{sig_b64}"
-        with pytest.raises(InvalidRequestException, match="signature"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(tampered_token, config=config)
 
     def test_tampered_header(self, valid_token: str, config: ServerConfig) -> None:
@@ -195,13 +196,13 @@ class TestVerifyRejectsSignature:
         header["alg"] = "none"
         tampered_header_b64 = _b64url_encode(json.dumps(header).encode())
         tampered_token = f"{tampered_header_b64}.{payload_b64}.{sig_b64}"
-        with pytest.raises(InvalidRequestException, match="algorithm"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(tampered_token, config=config)
 
     def test_wrong_signature(self, valid_token: str, config: ServerConfig) -> None:
         header_b64, payload_b64, _ = valid_token.split(".")
         fake_sig = _b64url_encode(b"totallyfakesignature")
-        with pytest.raises(InvalidRequestException, match="signature"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(
                 f"{header_b64}.{payload_b64}.{fake_sig}", config=config
             )
@@ -209,7 +210,7 @@ class TestVerifyRejectsSignature:
     def test_zero_byte_signature(self, valid_token: str, config: ServerConfig) -> None:
         header_b64, payload_b64, _ = valid_token.split(".")
         empty_sig = _b64url_encode(b"")
-        with pytest.raises(InvalidRequestException, match="signature"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(
                 f"{header_b64}.{payload_b64}.{empty_sig}", config=config
             )
@@ -218,7 +219,7 @@ class TestVerifyRejectsSignature:
         self, valid_token: str, config: ServerConfig, monkeypatch: MonkeyPatch
     ) -> None:
         monkeypatch.setenv("APP_KEY", "different-key-32-bytes!!!!!!!!!!")
-        with pytest.raises(InvalidRequestException, match="signature"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(valid_token, config=config)
 
 
@@ -270,7 +271,7 @@ def _make_signed_token(claims: dict, app_key: bytes) -> str:
 
 
 class TestVerifyRejectsInvalidClaims:
-    """Test that verify_consent_token rejects tokens with bad iss/aud/iat claims."""
+    """Test that verify_consent_token rejects tokens with bad iss/aud/nbf claims."""
 
     @pytest.fixture
     def app_key_bytes(self) -> bytes:
@@ -291,13 +292,14 @@ class TestVerifyRejectsInvalidClaims:
             "exp": now + 300,
         }
         token = _make_signed_token(claims, app_key_bytes)
-        with pytest.raises(InvalidRequestException, match="issuer"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(token, config=config)
 
     def test_wrong_audience(self, config: ServerConfig, app_key_bytes: bytes) -> None:
         now = int(time.time())
         claims = {
             "sub": "alice",
+            "jti": "test-jti",
             "client_id": "c",
             "redirect_uri": "u",
             "code_challenge": "x",
@@ -312,7 +314,7 @@ class TestVerifyRejectsInvalidClaims:
         with pytest.raises(InvalidRequestException, match="audience"):
             verify_consent_token(token, config=config)
 
-    def test_future_iat(self, config: ServerConfig, app_key_bytes: bytes) -> None:
+    def test_future_nbf(self, config: ServerConfig, app_key_bytes: bytes) -> None:
         now = int(time.time())
         claims = {
             "sub": "alice",
@@ -324,10 +326,11 @@ class TestVerifyRejectsInvalidClaims:
             "iss": config.app_url,
             "aud": config.app_url,
             "iat": now + 9999,
+            "nbf": now + 9999,
             "exp": now + 300,
         }
         token = _make_signed_token(claims, app_key_bytes)
-        with pytest.raises(InvalidRequestException, match="future"):
+        with pytest.raises(InvalidRequestException, match="Invalid consent token"):
             verify_consent_token(token, config=config)
 
     def test_missing_required_claim(
@@ -336,6 +339,7 @@ class TestVerifyRejectsInvalidClaims:
         now = int(time.time())
         # Missing "sub"
         claims = {
+            "jti": "test-jti",
             "client_id": "c",
             "redirect_uri": "u",
             "code_challenge": "x",
