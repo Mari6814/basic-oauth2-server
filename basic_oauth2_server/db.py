@@ -256,7 +256,9 @@ class DbSession:
         """Close the underlying SQLAlchemy session."""
         if exc_type is not None:
             logger.debug(
-                "DB session closed with exception (%d): %s", id(self._session), exc_type.__name__
+                "DB session closed with exception (%d): %s",
+                id(self._session),
+                exc_type.__name__,
             )
         else:
             logger.debug("DB session closed (%d)", id(self._session))
@@ -313,9 +315,7 @@ class ClientRepository:
         self._db._session.add(client)
         self._db._session.commit()
         self._db._session.refresh(client)
-        logger.info(
-            "Client created: %s (algorithm=%s)", client_id, algorithm.name
-        )
+        logger.info("Client created: %s (algorithm=%s)", client_id, algorithm.name)
         return client
 
     def list(self) -> list[Client]:
