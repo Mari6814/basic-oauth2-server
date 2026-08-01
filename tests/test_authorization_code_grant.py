@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import secrets
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,19 +12,19 @@ import pytest
 from jws_algorithms import SymmetricAlgorithm
 
 from basic_oauth2_server.authorization_code_grant import (
-    handle_authorize,
-    handle_authorization_code,
-    handle_refresh_token,
+    handle_authorize as _handle_authorize,
+    handle_authorization_code as _handle_authorization_code,
+    handle_refresh_token as _handle_refresh_token,
 )
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import (
     AuthorizationCode,
+    ClientRepository,
     RefreshToken,
-    create_authorization_code,
-    create_client,
-    create_refresh_token,
-    create_user,
-    get_session,
+    database,
+    init_db,
+    TokenRepository,
+    UserRepository,
 )
 from basic_oauth2_server.exceptions import (
     AuthorizationRedirectException,
@@ -40,24 +41,178 @@ def app_key() -> None:
 
 @pytest.fixture
 def db_path(tmp_path: Path) -> str:
-    path = str(tmp_path / "test.db")
-    create_client(
-        db_path=path,
-        client_id="test-client",
-        client_secret=b"test-secret",
-        algorithm=SymmetricAlgorithm.HS256,
-        signing_secret=b"signing-secret-1234567890abcdef",
-        scopes=["read", "write"],
-        audiences=["https://api.example.com"],
-        redirect_uris=["https://example.com/callback"],
-    )
-    create_user(path, "testuser", "testpass")
-    return path
+    """Return the database path for a test."""
+    return str(tmp_path / "test.db")
+
+
+@pytest.fixture(autouse=True)
+def configured_database(db_path: str) -> Generator[None, None, None]:
+    """Configure and seed the database for each test."""
+    init_db(db_path)
+    with database.connect() as db:
+        ClientRepository(db).create(
+            client_id="test-client",
+            client_secret=b"test-secret",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"signing-secret-1234567890abcdef",
+            scopes=["read", "write"],
+            audiences=["https://api.example.com"],
+            redirect_uris=["https://example.com/callback"],
+            title=None,
+        )
+        UserRepository(db).create("testuser", "testpass")
+    yield
+    database.reset()
 
 
 @pytest.fixture
 def config(db_path: str) -> ServerConfig:
+    """Return server config for the configured test database."""
     return ServerConfig(db_path=db_path)
+
+
+def _repo_config(refresh_token_expires_in: int = 2592000) -> ServerConfig:
+    """Build a server config for repository helpers."""
+    return ServerConfig(
+        db_path=database._db_path or "./oauth.db",
+        refresh_token_expires_in=refresh_token_expires_in,
+    )
+
+
+def create_client(**kwargs: object) -> object:
+    """Create a client through the client repository."""
+    with database.connect() as db:
+        return ClientRepository(db).create(**kwargs)
+
+
+def create_user(username: str, password: str) -> object:
+    """Create a user through the user repository."""
+    with database.connect() as db:
+        return UserRepository(db).create(username, password)
+
+
+def create_authorization_code(
+    *,
+    client_id: str,
+    user_id: str,
+    redirect_uri: str | None,
+    scope: str | None,
+    audience: str | None,
+    state: str | None,
+    code_challenge: str | None,
+    consent_jti: str,
+    code_challenge_method: str = "S256",
+    expires_in: int = 600,
+) -> str:
+    """Create an authorization code through the token repository."""
+    with database.connect() as db:
+        return TokenRepository(db, _repo_config()).create_authorization_code(
+            client_id=client_id,
+            user_id=user_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            audience=audience,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            consent_jti=consent_jti,
+            expires_in=expires_in,
+        )
+
+
+def create_refresh_token(
+    *,
+    client_id: str,
+    user_id: str,
+    scope: str | None,
+    audience: str | None,
+    expires_in: int,
+) -> str:
+    """Create a refresh token through the token repository."""
+    with database.connect() as db:
+        client = ClientRepository(db).get(client_id)
+        assert client is not None
+        return TokenRepository(
+            db, _repo_config(refresh_token_expires_in=expires_in)
+        ).issue_refresh_token(
+            client=client,
+            user_id=user_id,
+            scopes=scope.split() if scope else None,
+            audience=audience,
+        )
+
+
+def get_session() -> object:
+    """Return a raw SQLAlchemy session for direct inspection."""
+    return database.connect()._session
+
+
+def handle_authorize(
+    *,
+    authorized_username: str,
+    client_id: str,
+    redirect_uri: str,
+    code_challenge: str,
+    code_challenge_method: str,
+    scope: list[str] | None,
+    audience: str | None,
+    state: str,
+    config: ServerConfig,
+) -> dict[str, object]:
+    """Call handle_authorize with repositories wired in."""
+    with database.connect() as db:
+        return _handle_authorize(
+            authorized_username=authorized_username,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+            scope=scope,
+            audience=audience,
+            state=state,
+            config=config,
+            client_repo=ClientRepository(db),
+        )
+
+
+def handle_authorization_code(
+    *,
+    config: ServerConfig,
+    client_id: str,
+    client_secret: str,
+    code: str | None,
+    redirect_uri: str | None,
+    code_verifier: str | None,
+) -> dict[str, object]:
+    """Call handle_authorization_code with repositories wired in."""
+    with database.connect() as db:
+        return _handle_authorization_code(
+            client_id=client_id,
+            client_secret=client_secret,
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+            client_repo=ClientRepository(db),
+            token_repo=TokenRepository(db, config),
+        )
+
+
+def handle_refresh_token(
+    *,
+    config: ServerConfig,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str | None,
+) -> dict[str, object]:
+    """Call handle_refresh_token with repositories wired in."""
+    with database.connect() as db:
+        return _handle_refresh_token(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token,
+            client_repo=ClientRepository(db),
+            token_repo=TokenRepository(db, config),
+        )
 
 
 def b64(s: str) -> str:
@@ -169,7 +324,6 @@ class TestHandleAuthorizationCode:
     def test_client_not_found_raises(self, config: ServerConfig, db_path: str) -> None:
         """Unknown clients cannot exchange authorization codes."""
         code = create_authorization_code(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             redirect_uri=None,
@@ -194,14 +348,12 @@ class TestHandleAuthorizationCode:
     ) -> None:
         """Authorization code was issued for a different client."""
         create_client(
-            db_path=db_path,
             client_id="other-client",
             client_secret=b"other-secret",
             algorithm=SymmetricAlgorithm.HS256,
             signing_secret=b"other-signing-secret-1234567890",
         )
         code = create_authorization_code(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             redirect_uri=None,
@@ -227,7 +379,6 @@ class TestHandleAuthorizationCode:
         """Authorization codes are bound to their redirect URI."""
         code_verifier = "my-verifier-long-enough-for-s256"
         code = create_authorization_code(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             redirect_uri="https://example.com/callback",
@@ -253,7 +404,6 @@ class TestHandleAuthorizationCode:
         """Successful exchanges return a refresh token and prune stale auth codes."""
         code_verifier = "my-verifier-long-enough-for-s256"
         valid_code = create_authorization_code(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             redirect_uri="https://example.com/callback",
@@ -266,7 +416,7 @@ class TestHandleAuthorizationCode:
 
         expired_code = "expired-code"
         used_code = "used-code"
-        with get_session(db_path) as session:
+        with get_session() as session:
             session.add_all(
                 [
                     AuthorizationCode(
@@ -312,7 +462,7 @@ class TestHandleAuthorizationCode:
 
         assert response["token_type"] == "Bearer"
         assert isinstance(response["refresh_token"], str)
-        with get_session(db_path) as session:
+        with get_session() as session:
             assert session.get(AuthorizationCode, expired_code) is None
             assert session.get(AuthorizationCode, used_code) is None
 
@@ -335,7 +485,6 @@ class TestHandleRefreshToken:
     ) -> None:
         """A valid refresh token issues a new access token and replacement refresh token."""
         refresh_token = create_refresh_token(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             scope="read write",
@@ -361,7 +510,6 @@ class TestHandleRefreshToken:
     ) -> None:
         """Refresh tokens are single-use and invalid after rotation."""
         refresh_token = create_refresh_token(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             scope="read",
@@ -391,7 +539,6 @@ class TestHandleRefreshToken:
     ) -> None:
         """Expired refresh tokens are rejected."""
         refresh_token = create_refresh_token(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             scope="read",
@@ -414,14 +561,12 @@ class TestHandleRefreshToken:
     ) -> None:
         """Refresh tokens cannot be exchanged by a different client."""
         create_client(
-            db_path=db_path,
             client_id="other-client",
             client_secret=b"other-secret",
             algorithm=SymmetricAlgorithm.HS256,
             signing_secret=b"other-signing-secret-1234567890",
         )
         refresh_token = create_refresh_token(
-            db_path=db_path,
             client_id="test-client",
             user_id="testuser",
             scope="read",
@@ -439,7 +584,7 @@ class TestHandleRefreshToken:
                 refresh_token=refresh_token,
             )
 
-        with get_session(db_path) as session:
+        with get_session() as session:
             assert session.get(RefreshToken, refresh_token) is None
 
 

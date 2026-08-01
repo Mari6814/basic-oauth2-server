@@ -2,6 +2,7 @@
 
 import os
 import secrets
+from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -12,14 +13,13 @@ from pytest import CaptureFixture
 from basic_oauth2_server.cli import main
 from basic_oauth2_server.db import (
     AuthorizationCode,
-    create_authorization_code,
-    create_user,
-    get_client,
-    get_session,
-    get_user,
+    ClientRepository,
+    TokenRepository,
+    UserRepository,
+    database,
     init_db,
-    list_clients,
 )
+from basic_oauth2_server.config import ServerConfig
 
 
 @pytest.fixture(autouse=True)
@@ -28,10 +28,79 @@ def app_key() -> None:
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> str:
+def db(tmp_path: Path) -> Generator[str, None, None]:
+    """Yield a configured database path for CLI tests."""
     path = str(tmp_path / "test.db")
     init_db(path)
-    return path
+    yield path
+    database.reset()
+
+
+def _repo_config(
+    db_path: str | None = None, refresh_token_expires_in: int = 2592000
+) -> ServerConfig:
+    """Build a repository config for helper operations."""
+    return ServerConfig(
+        db_path=db_path or database._db_path or "./oauth.db",
+        refresh_token_expires_in=refresh_token_expires_in,
+    )
+
+
+def create_user(username: str, password: str) -> object:
+    """Create a user through the repository."""
+    with database.connect() as db:
+        return UserRepository(db).create(username, password)
+
+
+def get_user(username: str) -> object | None:
+    """Load a user through the repository."""
+    with database.connect() as db:
+        return UserRepository(db).get(username)
+
+
+def get_client(client_id: str) -> object | None:
+    """Load a client through the repository."""
+    with database.connect() as db:
+        return ClientRepository(db).get(client_id)
+
+
+def list_clients() -> list[object]:
+    """List clients through the repository."""
+    with database.connect() as db:
+        return ClientRepository(db).list()
+
+
+def create_authorization_code(
+    *,
+    client_id: str,
+    user_id: str,
+    redirect_uri: str | None,
+    scope: str | None,
+    audience: str | None,
+    state: str | None,
+    code_challenge: str | None,
+    expires_in: int,
+    consent_jti: str,
+) -> str:
+    """Create an authorization code through the repository."""
+    with database.connect() as db:
+        return TokenRepository(db, _repo_config()).create_authorization_code(
+            client_id=client_id,
+            user_id=user_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            audience=audience,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method="S256",
+            consent_jti=consent_jti,
+            expires_in=expires_in,
+        )
+
+
+def get_session() -> object:
+    """Return a raw SQLAlchemy session for direct inspection."""
+    return database.connect()._session
 
 
 class TestNoCommand:
@@ -53,7 +122,7 @@ class TestClientsCreate:
         assert "OAUTH_CLIENT_ID=clientA" in out
         assert "OAUTH_CLIENT_SECRET=" in out
         assert "JWT_SECRET=" in out
-        client = get_client(db, "clientA")
+        client = get_client("clientA")
         assert client is not None
         assert client.algorithm == "HS256"
 
@@ -86,7 +155,7 @@ class TestClientsCreate:
             ]
         )
         assert result == 0
-        client = get_client(db, "clientC")
+        client = get_client("clientC")
         assert client is not None
         assert "read" in client.get_scopes_list()
         assert "write" in client.get_scopes_list()
@@ -95,7 +164,7 @@ class TestClientsCreate:
     def test_create_client_autogenerates_id(self, db: str) -> None:
         result = main(["--db", db, "clients", "create"])
         assert result == 0
-        clients = list_clients(db)
+        clients = list_clients()
         assert len(clients) == 1
 
     def test_create_client_asymmetric_algorithm(
@@ -108,7 +177,7 @@ class TestClientsCreate:
         out = capsys.readouterr().out
         # Asymmetric: no signing secret should be printed
         assert "JWT_SECRET=" not in out
-        client = get_client(db, "clientRS")
+        client = get_client("clientRS")
         assert client is not None
         assert client.algorithm == "RS256"
 
@@ -139,7 +208,7 @@ class TestClientsDelete:
         result = main(["--db", db, "clients", "delete", "-d", "to-delete"])
         assert result == 0
         assert "Deleted" in capsys.readouterr().out
-        assert get_client(db, "to-delete") is None
+        assert get_client("to-delete") is None
 
     def test_delete_nonexistent_client_returns_1(
         self, db: str, capsys: CaptureFixture[str]
@@ -162,7 +231,7 @@ class TestUsersCreate:
         result = main(["--db", db, "users", "create", "-u", "alice", "-p", "secret"])
         assert result == 0
         assert "Created user 'alice'" in capsys.readouterr().out
-        user = get_user(db, "alice")
+        user = get_user("alice")
         assert user is not None
         assert user.verify_password("secret")
 
@@ -173,7 +242,7 @@ class TestUsersCreate:
             result = main(["--db", db, "users", "create", "-u", "bob"])
         assert result == 0
         mock_getpass.assert_called_once()
-        assert get_user(db, "bob") is not None
+        assert get_user("bob") is not None
 
     def test_create_duplicate_user_returns_1(
         self, db: str, capsys: CaptureFixture[str]
@@ -224,7 +293,7 @@ class TestUsersDelete:
         result = main(["--db", db, "users", "delete", "-u", "frank"])
         assert result == 0
         assert "Deleted" in capsys.readouterr().out
-        assert get_user(db, "frank") is None
+        assert get_user("frank") is None
 
     def test_delete_nonexistent_user_returns_1(
         self, db: str, capsys: CaptureFixture[str]
@@ -245,7 +314,7 @@ class TestUsersUpdatePassword:
         )
         assert result == 0
         assert "Updated password" in capsys.readouterr().out
-        user = get_user(db, "grace")
+        user = get_user("grace")
         assert user is not None
         assert user.verify_password("new-pw")
         assert not user.verify_password("old-pw")
@@ -259,7 +328,7 @@ class TestUsersUpdatePassword:
             result = main(["--db", db, "users", "update-password", "-u", "henry"])
         assert result == 0
         mock_getpass.assert_called_once()
-        user = get_user(db, "henry")
+        user = get_user("henry")
         assert user is not None
         assert user.verify_password("prompted-new-pw")
 
@@ -281,11 +350,10 @@ class TestAuthCodesPrune:
     def test_prune_deletes_used_and_expired_rows(
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
-        create_user(db, "user-a", "pw")
-        create_user(db, "user-b", "pw")
-        create_user(db, "user-c", "pw")
+        create_user("user-a", "pw")
+        create_user("user-b", "pw")
+        create_user("user-c", "pw")
         used_code = create_authorization_code(
-            db_path=db,
             client_id="client-a",
             user_id="user-a",
             redirect_uri=None,
@@ -297,7 +365,6 @@ class TestAuthCodesPrune:
             consent_jti=secrets.token_urlsafe(32),
         )
         expired_code = create_authorization_code(
-            db_path=db,
             client_id="client-b",
             user_id="user-b",
             redirect_uri=None,
@@ -309,7 +376,6 @@ class TestAuthCodesPrune:
             consent_jti=secrets.token_urlsafe(32),
         )
         active_code = create_authorization_code(
-            db_path=db,
             client_id="client-c",
             user_id="user-c",
             redirect_uri=None,
@@ -321,7 +387,7 @@ class TestAuthCodesPrune:
             consent_jti=secrets.token_urlsafe(32),
         )
 
-        with get_session(db) as session:
+        with get_session() as session:
             used = session.get(AuthorizationCode, used_code)
             expired = session.get(AuthorizationCode, expired_code)
             assert used is not None
@@ -337,7 +403,7 @@ class TestAuthCodesPrune:
         out = capsys.readouterr().out
         assert "Pruned 2 authorization code rows." in out
 
-        with get_session(db) as session:
+        with get_session() as session:
             assert session.get(AuthorizationCode, used_code) is None
             assert session.get(AuthorizationCode, expired_code) is None
             assert session.get(AuthorizationCode, active_code) is not None
@@ -345,9 +411,8 @@ class TestAuthCodesPrune:
     def test_prune_with_no_matching_rows(
         self, db: str, capsys: CaptureFixture[str]
     ) -> None:
-        create_user(db, "user-active", "pw")
+        create_user("user-active", "pw")
         create_authorization_code(
-            db_path=db,
             client_id="client-active",
             user_id="user-active",
             redirect_uri=None,
@@ -382,7 +447,7 @@ class TestServeCreateRootClient:
         assert "Created default client 'default'" in out
         assert "OAUTH_DEFAULT_CLIENT_SECRET=" in out
         assert "JWT_SECRET=" in out
-        client = get_client(db, "default")
+        client = get_client("default")
         assert client is not None
         assert client.algorithm == "HS256"
 
@@ -403,7 +468,7 @@ class TestServeCreateRootClient:
         assert result == 0
         out = capsys.readouterr().out
         assert "OAUTH_DEFAULT_CLIENT_SECRET=" not in out
-        client = get_client(db, "default")
+        client = get_client("default")
         assert client is not None
         assert client.verify_client_secret(b"mysecret")
 
@@ -458,7 +523,7 @@ class TestServeCreateRootClient:
         assert result == 0
         out = capsys.readouterr().out
         assert "JWT_SECRET=" not in out
-        client = get_client(db, "default")
+        client = get_client("default")
         assert client is not None
         assert client.get_signing_secret() == bytes.fromhex("deadbeef")
 
@@ -479,7 +544,7 @@ class TestServeCreateRootClient:
         assert result == 0
         out = capsys.readouterr().out
         assert "JWT_SECRET=" not in out
-        client = get_client(db, "default")
+        client = get_client("default")
         assert client is not None
         assert client.algorithm == "RS256"
 
@@ -504,7 +569,7 @@ class TestServeCreateRootClient:
                 ]
             )
         assert result == 0
-        client = get_client(db, "default")
+        client = get_client("default")
         assert client is not None
         assert client.get_signing_secret() == key_file.read_bytes()
 
@@ -527,7 +592,7 @@ class TestServeCreateRootClient:
                 ]
             )
         assert result == 0
-        client = get_client(db, "myrootclient")
+        client = get_client("myrootclient")
         assert client is not None
         assert "read" in client.get_scopes_list()
         assert "write" in client.get_scopes_list()
@@ -552,7 +617,7 @@ class TestServeCreateRootUser:
         assert result == 0
         out = capsys.readouterr().out
         assert "Created default user 'default'" in out
-        user = get_user(db, "default")
+        user = get_user("default")
         assert user is not None
         assert user.verify_password("secret123")
 
@@ -564,7 +629,7 @@ class TestServeCreateRootUser:
                 result = main(["--db", db, "serve", "--create-default-user"])
         assert result == 0
         mock_getpass.assert_called_once()
-        user = get_user(db, "default")
+        user = get_user("default")
         assert user is not None
         assert user.verify_password("prompted-pw")
 
@@ -597,7 +662,7 @@ class TestServeCreateRootUser:
         assert result == 0
         out = capsys.readouterr().out
         assert "Updated default user 'default'" in out
-        user = get_user(db, "default")
+        user = get_user("default")
         assert user is not None
         assert user.verify_password("new-pw")
         assert not user.verify_password("old-pw")
@@ -622,7 +687,7 @@ class TestServeCreateRootUser:
                 result = main(["--db", db, "serve", "--create-default-user"])
         assert result == 0
         mock_getpass.assert_called_once()
-        user = get_user(db, "default")
+        user = get_user("default")
         assert user is not None
         assert user.verify_password("new-pw-prompted")
         assert not user.verify_password("old-pw")
@@ -642,6 +707,6 @@ class TestServeCreateRootUser:
                 ]
             )
         assert result == 0
-        user = get_user(db, "admin")
+        user = get_user("admin")
         assert user is not None
         assert user.verify_password("adminpass")

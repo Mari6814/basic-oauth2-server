@@ -3,57 +3,32 @@
 import logging
 from typing import Literal
 
-from .config import ServerConfig
+from .db import ClientRepository, TokenRepository
 from .exceptions import (
     InvalidAudienceException,
     InvalidClientException,
     InvalidScopeException,
     OAuthServerErrorException,
 )
-from .db import get_client, touch_client_last_used
-from .token_service import create_access_token_for_client
 
 logger = logging.getLogger(__name__)
 
 
 def handle_client_credentials(
-    config: ServerConfig,
-    client_id: str,
-    client_secret: str,
+    client_id: str | None,
+    client_secret: str | None,
     scope: str | None,
     audience: str | None,
+    client_repo: ClientRepository,
+    token_repo: TokenRepository,
 ) -> dict[Literal["access_token", "token_type", "expires_in", "scope"], str | int]:
-    """Handle the client_credentials grant type.
-
-    Performs the OAuth2 server to server client credentials flow.
-    In this flow, a client can directly request an access token by providing its credentials, without any user involvement.
-
-    Args:
-        config: The server configuration.
-        client_id: The client id provided in the request body. Required. It is only nullable for error handling purposes.
-        client_secret: The client secret provided in the request body. Required. It is only nullable for error handling purposes.
-        scope: The *space separated* requested scopes provided in the request body.
-        audience: The requested audience provided in the request body.
-
-    Returns:
-        dict: The typical client credentials flow response data with "access_token", "token_type" and "expires_in" fields.
-
-    Raises:
-        InvalidClientException: If client authentication fails due to missing or invalid credentials.
-        InvalidScopeException: If the client requests scopes that are not allowed for it.
-        InvalidAudienceException: If the client requests an audience that is not allowed for it.
-        OAuthServerErrorException: If there is an unexpected error during token creation.
-    """
-    if not client_id:
+    """Handle the client_credentials grant type."""
+    if not client_id or not client_secret:
         raise InvalidClientException(
             "Client authentication failed: missing credentials"
         )
-
-    client = get_client(config.db_path, client_id=client_id)
-    if not client:
-        raise InvalidClientException("Client authentication failed")
-
-    if not client.verify_client_secret(client_secret):
+    client = client_repo.get(client_id)
+    if client is None or not client.verify_client_secret(client_secret):
         raise InvalidClientException("Client authentication failed")
 
     requested_scopes: list[str] = []
@@ -61,7 +36,9 @@ def handle_client_credentials(
         requested_scopes = scope.split()
         allowed_scopes = client.get_scopes_list()
         invalid_scopes = [
-            scope for scope in requested_scopes if scope not in allowed_scopes
+            requested_scope
+            for requested_scope in requested_scopes
+            if requested_scope not in allowed_scopes
         ]
         if invalid_scopes:
             logger.warning(
@@ -79,25 +56,25 @@ def handle_client_credentials(
             )
 
     try:
-        access_token = create_access_token_for_client(
-            config,
-            client,
+        access_token = token_repo.issue_access_token(
+            client=client,
+            subject=client.client_id,
             scopes=requested_scopes if requested_scopes else None,
             audience=audience,
         )
-        touch_client_last_used(config.db_path, client_id)
+        client_repo.touch_last_used(client_id)
         logger.info(
             "Issued token for client: %s (algorithm: %s)",
             client_id,
             client.algorithm,
         )
-    except Exception as e:
-        logger.error("Failed to create token for client %s: %s", client_id, e)
-        raise OAuthServerErrorException("Failed to create access token")
+    except Exception as exc:
+        logger.error("Failed to create token for client %s: %s", client_id, exc)
+        raise OAuthServerErrorException("Failed to create access token") from exc
 
     return {
         "access_token": access_token,
         "token_type": "Bearer",
-        "expires_in": config.token_expires_in,
+        "expires_in": token_repo.token_expires_in,
         **({"scope": scope} if scope else {}),
     }

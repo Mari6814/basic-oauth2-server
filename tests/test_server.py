@@ -15,11 +15,11 @@ from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import (
+    ClientRepository,
     RefreshToken,
-    create_client,
-    create_refresh_token,
-    create_user,
-    get_session,
+    TokenRepository,
+    UserRepository,
+    database,
     init_db,
 )
 from basic_oauth2_server.jwt import create_access_token
@@ -36,22 +36,24 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
 
     init_db(str(db_path))
     yield str(db_path)
+    database.reset()
 
 
 @pytest.fixture
 def client_with_db(temp_db: str) -> TestClient:
     """Create a test client with a temporary database."""
-    create_client(
-        db_path=temp_db,
-        client_id="test-client",
-        client_secret=b"test-secret",
-        algorithm=SymmetricAlgorithm.HS256,
-        signing_secret=b"test-signing-secret-1234567890",
-        scopes=["read", "write"],
-        audiences=["https://api.test.com"],
-        redirect_uris=["http://localhost/callback"],
-    )
-    create_user(temp_db, "testuser", "testpass")
+    with database.connect() as db:
+        ClientRepository(db).create(
+            client_id="test-client",
+            client_secret=b"test-secret",
+            algorithm=SymmetricAlgorithm.HS256,
+            signing_secret=b"test-signing-secret-1234567890",
+            scopes=["read", "write"],
+            audiences=["https://api.test.com"],
+            redirect_uris=["http://localhost/callback"],
+            title=None,
+        )
+        UserRepository(db).create("testuser", "testpass")
 
     config = ServerConfig(
         host="localhost",
@@ -65,6 +67,56 @@ def client_with_db(temp_db: str) -> TestClient:
 def b64(s: str) -> str:
     """Transforms any string into its base64 representation decoded as UTF-8."""
     return base64.b64encode(s.encode()).decode()
+
+
+def _repo_config(
+    db_path: str | None = None, refresh_token_expires_in: int = 2592000
+) -> ServerConfig:
+    """Build a repository config for helper operations."""
+    return ServerConfig(
+        db_path=db_path or database._db_path or "./oauth.db",
+        refresh_token_expires_in=refresh_token_expires_in,
+    )
+
+
+def create_client(**kwargs: object) -> object:
+    """Create a client through the repository."""
+    with database.connect() as db:
+        return ClientRepository(db).create(**kwargs)
+
+
+def create_user(username: str, password: str) -> object:
+    """Create a user through the repository."""
+    with database.connect() as db:
+        return UserRepository(db).create(username, password)
+
+
+def create_refresh_token(
+    *,
+    client_id: str,
+    user_id: str,
+    scope: str | None,
+    audience: str | None,
+    expires_in: int,
+) -> str:
+    """Create a refresh token through the repository."""
+    with database.connect() as db:
+        client = ClientRepository(db).get(client_id)
+        assert client is not None
+        return TokenRepository(
+            db,
+            _repo_config(refresh_token_expires_in=expires_in),
+        ).issue_refresh_token(
+            client=client,
+            user_id=user_id,
+            scopes=scope.split() if scope else None,
+            audience=audience,
+        )
+
+
+def get_session() -> object:
+    """Return a raw SQLAlchemy session for direct inspection."""
+    return database.connect()._session
 
 
 def test_token_endpoint_success(client_with_db: TestClient) -> None:
@@ -116,7 +168,6 @@ def test_token_endpoint_with_scope(client_with_db: TestClient) -> None:
 def test_request_subset_of_allowed_scopes(temp_db: str) -> None:
     """A client may request a subset of its configured scopes."""
     create_client(
-        db_path=temp_db,
         client_id="subset-client",
         client_secret=b"subset-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -230,7 +281,6 @@ def test_token_endpoint_with_audience(client_with_db: TestClient) -> None:
 def test_request_one_of_allowed_audiences(temp_db: str) -> None:
     """A client may request any single audience from its configured list."""
     create_client(
-        db_path=temp_db,
         client_id="audience-client",
         client_secret=b"audience-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -279,7 +329,6 @@ KEYS_DIR = Path(__file__).parent / "keys"
 def client_with_rsa(temp_db: str) -> TestClient:
     """Create a test client using RS256 algorithm."""
     create_client(
-        db_path=temp_db,
         client_id="rsa-client",
         client_secret=b"rsa-secret",
         algorithm=AsymmetricAlgorithm.RS256,
@@ -299,7 +348,6 @@ def client_with_rsa(temp_db: str) -> TestClient:
 def client_with_es256(temp_db: str) -> TestClient:
     """Create a test client using ES256 algorithm."""
     create_client(
-        db_path=temp_db,
         client_id="es256-client",
         client_secret=b"es256-secret",
         algorithm=AsymmetricAlgorithm.ES256,
@@ -319,7 +367,6 @@ def client_with_es256(temp_db: str) -> TestClient:
 def client_with_es384(temp_db: str) -> TestClient:
     """Create a test client using ES384 algorithm."""
     create_client(
-        db_path=temp_db,
         client_id="es384-client",
         client_secret=b"es384-secret",
         algorithm=AsymmetricAlgorithm.ES384,
@@ -339,7 +386,6 @@ def client_with_es384(temp_db: str) -> TestClient:
 def client_with_es512(temp_db: str) -> TestClient:
     """Create a test client using ES512 algorithm."""
     create_client(
-        db_path=temp_db,
         client_id="es512-client",
         client_secret=b"es512-secret",
         algorithm=AsymmetricAlgorithm.ES512,
@@ -359,7 +405,6 @@ def client_with_es512(temp_db: str) -> TestClient:
 def client_with_eddsa(temp_db: str) -> TestClient:
     """Create a test client using EdDSA algorithm."""
     create_client(
-        db_path=temp_db,
         client_id="eddsa-client",
         client_secret=b"eddsa-secret",
         algorithm=AsymmetricAlgorithm.EdDSA,
@@ -397,7 +442,6 @@ def test_token_rsa_algorithm(client_with_rsa: TestClient) -> None:
 def client_with_ps256(temp_db: str) -> TestClient:
     """Create a test client using PS256 algorithm (RSA-PSS)."""
     create_client(
-        db_path=temp_db,
         client_id="ps256-client",
         client_secret=b"ps256-secret",
         algorithm=AsymmetricAlgorithm.PS256,
@@ -507,7 +551,6 @@ def test_token_eddsa_algorithm(client_with_eddsa: TestClient) -> None:
 def client_with_key_id(temp_db: str) -> TestClient:
     """Create a test client with key ID configured."""
     create_client(
-        db_path=temp_db,
         client_id="kid-client",
         client_secret=b"kid-secret",
         algorithm=AsymmetricAlgorithm.RS256,
@@ -547,7 +590,6 @@ def test_token_includes_kid_header(client_with_key_id: TestClient) -> None:
 def client_with_issuer(temp_db: str) -> TestClient:
     """Create a test client with APP_URL configured for issuer."""
     create_client(
-        db_path=temp_db,
         client_id="issuer-client",
         client_secret=b"issuer-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -1427,16 +1469,14 @@ class TestRefreshTokenGrant:
     def test_expired_refresh_token_returns_invalid_grant(self, temp_db: str) -> None:
         """Expired refresh tokens are rejected by the token endpoint."""
         create_client(
-            db_path=temp_db,
             client_id="expiry-client",
             client_secret=b"expiry-secret",
             algorithm=SymmetricAlgorithm.HS256,
             signing_secret=b"expiry-signing-secret-12345",
             redirect_uris=["http://localhost/callback"],
         )
-        create_user(temp_db, "testuser", "testpass")
+        create_user("testuser", "testpass")
         issued_refresh_token = create_refresh_token(
-            db_path=temp_db,
             client_id="expiry-client",
             user_id="testuser",
             scope="read",
@@ -1464,7 +1504,6 @@ class TestRefreshTokenGrant:
     ) -> None:
         """A refresh token cannot be redeemed by another client."""
         create_client(
-            db_path=temp_db,
             client_id="client-a",
             client_secret=b"secret-a",
             algorithm=SymmetricAlgorithm.HS256,
@@ -1472,17 +1511,15 @@ class TestRefreshTokenGrant:
             redirect_uris=["http://localhost/callback"],
         )
         create_client(
-            db_path=temp_db,
             client_id="client-b",
             client_secret=b"secret-b",
             algorithm=SymmetricAlgorithm.HS256,
             signing_secret=b"signing-secret-b-12345",
             redirect_uris=["http://localhost/callback"],
         )
-        create_user(temp_db, "testuser", "testpass")
+        create_user("testuser", "testpass")
 
         issued_refresh_token = create_refresh_token(
-            db_path=temp_db,
             client_id="client-a",
             user_id="testuser",
             scope="read",
@@ -1505,7 +1542,7 @@ class TestRefreshTokenGrant:
         assert response.status_code == 400
         assert response.json()["error"] == "invalid_grant"
 
-        with get_session(temp_db) as session:
+        with get_session() as session:
             assert session.get(RefreshToken, issued_refresh_token) is None
 
     def test_missing_refresh_token_returns_invalid_request(
@@ -1617,14 +1654,13 @@ def test_authorize_unsupported_pkce_method_rejected(client_with_db: TestClient) 
 def test_authorize_redirect_uri_validation(temp_db: str) -> None:
     """Test that redirect_uri must match registered URIs when configured."""
     create_client(
-        db_path=temp_db,
         client_id="redirect-client",
         client_secret=b"redirect-secret",
         algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"redirect-signing-secret-12345",
         redirect_uris=["https://example.com/callback", "https://app.example.com/oauth"],
     )
-    create_user(temp_db, "testuser", "testpass")
+    create_user("testuser", "testpass")
 
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)
@@ -1664,13 +1700,12 @@ def test_authorize_redirect_uri_validation(temp_db: str) -> None:
 def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
     """Test that empty redirect_uris rejects all redirect URIs."""
     create_client(
-        db_path=temp_db,
         client_id="open-client",
         client_secret=b"open-secret",
         algorithm=SymmetricAlgorithm.HS256,
         signing_secret=b"open-signing-secret-123456",
     )
-    create_user(temp_db, "testuser", "testpass")
+    create_user("testuser", "testpass")
 
     config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
     app = create_app(config)
@@ -1695,7 +1730,6 @@ def test_authorize_redirect_uri_no_restriction(temp_db: str) -> None:
 def test_token_expires_in_configurable(temp_db: str) -> None:
     """Test that token expiry can be configured via ServerConfig."""
     create_client(
-        db_path=temp_db,
         client_id="expiry-client",
         client_secret=b"expiry-secret",
         algorithm=SymmetricAlgorithm.HS256,
@@ -1814,7 +1848,6 @@ class TestAuthorizeConfirmUserMismatch:
     def test_authorize_confirm_rejects_user_mismatch(self, temp_db: str) -> None:
         """POST /authorize/confirm returns 403 when the Basic Auth user differs from the token user."""
         create_client(
-            db_path=temp_db,
             client_id="mismatch-client",
             client_secret=b"mismatch-secret",
             algorithm=SymmetricAlgorithm.HS256,
@@ -1822,8 +1855,8 @@ class TestAuthorizeConfirmUserMismatch:
             scopes=["read"],
             redirect_uris=["http://localhost/callback"],
         )
-        create_user(temp_db, "alice", "alicepass")
-        create_user(temp_db, "bob", "bobpass")
+        create_user("alice", "alicepass")
+        create_user("bob", "bobpass")
 
         config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
         app = create_app(config)
@@ -1864,7 +1897,6 @@ class TestAuthorizeConfirmUserMismatch:
     ) -> None:
         """Test that user mismatch is detected across different clients."""
         create_client(
-            db_path=temp_db,
             client_id="client-a",
             client_secret=b"secret-a",
             algorithm=SymmetricAlgorithm.HS256,
@@ -1873,7 +1905,6 @@ class TestAuthorizeConfirmUserMismatch:
             redirect_uris=["http://localhost/callback"],
         )
         create_client(
-            db_path=temp_db,
             client_id="client-b",
             client_secret=b"secret-b",
             algorithm=SymmetricAlgorithm.HS256,
@@ -1881,8 +1912,8 @@ class TestAuthorizeConfirmUserMismatch:
             scopes=["read"],
             redirect_uris=["http://localhost/callback"],
         )
-        create_user(temp_db, "alice", "alicepass")
-        create_user(temp_db, "bob", "bobpass")
+        create_user("alice", "alicepass")
+        create_user("bob", "bobpass")
 
         config = ServerConfig(host="localhost", port=8080, db_path=temp_db)
         app = create_app(config)

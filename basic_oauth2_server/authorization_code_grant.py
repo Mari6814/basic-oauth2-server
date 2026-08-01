@@ -1,31 +1,20 @@
+"""Authorization code and refresh token grant handlers."""
+
+import base64
+import hashlib
 import logging
 from typing import Literal
 from urllib.parse import urlencode
 
-import base64
-import hashlib
-
 from basic_oauth2_server.consent_token import create_consent_token
+from basic_oauth2_server.config import ServerConfig
 
-from .token_service import (
-    create_access_token_for_client,
-    create_refresh_token_for_client,
-)
+from .db import ClientRepository, TokenRepository
 from .exceptions import (
     AuthorizationRedirectException,
     InvalidClientException,
-    InvalidRequestException,
     InvalidGrantException,
-)
-from .config import ServerConfig
-from .db import (
-    create_authorization_code,
-    consume_authorization_code,
-    consume_refresh_token,
-    get_client,
-    prune_authorization_codes,
-    prune_refresh_tokens,
-    touch_client_last_used,
+    InvalidRequestException,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,6 +30,7 @@ def handle_authorize(
     audience: str | None,
     state: str,
     config: ServerConfig,
+    client_repo: ClientRepository,
 ) -> dict[
     Literal[
         "type",
@@ -55,29 +45,37 @@ def handle_authorize(
     ],
     str | list[str] | None,
 ]:
-    """OAuth2 consent page.
+    """Validate the authorization request and return consent page data.
 
-    The consent page is responsible for authenticating the user, validating the
-    authorization request, and displaying it to the user for confirmation.
+    The consent page is responsible for validating the authorization request
+    and presenting it to the authenticated user for confirmation.
 
     Parameters:
-        client_id: The client for which the authorization request is being made. If the user confirms, the owner of that client will receive the bearer token to access resources the user owns.
-        redirect_uri: The url to send the authorization code to after the user confirms. Must match one of the redirect URIs registered for the client.
-        code_challenge: The PKCE code challenge from the authorization request.
-        code_challenge_method: The PKCE code challenge method. Only "S256" is supported.
-        scope: The scopes requested by the client, as a list of strings. Must be a subset of the scopes registered for the client.
-        audience: Optional audience requested by the client. Must be one of the audiences registered for the client.
-        state: PKCE state parameter.
-        config: The server config, used to access the database and app URL for generating the confirm URL.
+        authorized_username: The already-authenticated user's username.
+        client_id: The client requesting access. If the user confirms, this
+            client receives the authorization code to exchange for tokens.
+        redirect_uri: Where to send the authorization code after confirmation.
+            Must match one of the redirect URIs registered for the client.
+        code_challenge: base64url(SHA-256(code_verifier)) sent by the client at authorization time.
+        code_challenge_method: Hashing method used for the code challenge. Only "S256" is supported.
+        scope: Scopes requested by the client. Must be a subset of the
+            scopes registered for the client.
+        audience: Optional audience requested by the client. Must be one of
+            the audiences registered for the client.
+        state: Opaque value from the client used to prevent CSRF and correlate
+            the authorization response with the original request.
+        config: Server configuration, used for the app URL and signing key.
+        client_repo: Client persistence operations.
 
     Returns:
-        A portion of the props required to visualize in the consent page.
+        Consent page data including the signed consent token the user must
+        POST to /authorize/confirm to complete the flow.
     """
     if code_challenge_method != "S256":
         raise InvalidRequestException("code_challenge_method must be S256")
 
-    client = get_client(config.db_path, client_id)
-    if not client:
+    client = client_repo.get(client_id)
+    if client is None:
         raise InvalidClientException("Invalid client")
 
     allowed_uris = client.get_redirect_uris_list()
@@ -87,12 +85,16 @@ def handle_authorize(
     requested_scopes = scope if scope else []
     if requested_scopes:
         allowed_scopes = client.get_scopes_list()
-        invalid = [s for s in requested_scopes if s not in allowed_scopes]
-        if invalid:
+        invalid_scopes = [
+            requested_scope
+            for requested_scope in requested_scopes
+            if requested_scope not in allowed_scopes
+        ]
+        if invalid_scopes:
             raise AuthorizationRedirectException(
                 redirect_uri=redirect_uri,
                 error="invalid_scope",
-                description=f"Invalid scopes: {', '.join(invalid)}",
+                description=f"Invalid scopes: {', '.join(invalid_scopes)}",
                 state=state,
             )
 
@@ -140,18 +142,17 @@ def handle_authorize_confirm(
     audience: str | None,
     state: str,
     username: str,
-    config: ServerConfig,
     consent_jti: str,
+    token_repo: TokenRepository,
 ) -> str:
-    """Create an authorization code and redirect to the client with the code.
+    """Create an authorization code and redirect to the client.
 
-    Assumes that the user has authenticated themselves, reviewed the consent page,
-    and confirmed the authorization request, marking their consent token as consented to.
-    The confirmed token has then been associated with the parameters passed to this
-    function to create a valid authorization code and redirect URL.
+    Assumes the user has authenticated, reviewed the consent page, and
+    confirmed the request. Stores the authorization code and returns the
+    redirect URL with the code and state attached.
+    TODO: Rewrite documentation here. Clarify that `username` is meant to be assumed the authenticated user without implying that anything unsafe is happening here... Also, probably need to refactor consent token concept? The code is not robust enough for me to guarantee that it actually proves anything.
     """
-    code = create_authorization_code(
-        db_path=config.db_path,
+    code = token_repo.create_authorization_code(
         client_id=client_id,
         user_id=username,
         redirect_uri=redirect_uri,
@@ -161,11 +162,9 @@ def handle_authorize_confirm(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         consent_jti=consent_jti,
+        expires_in=600,
     )
-
-    redirect_params: dict[str, str] = {"code": code, "state": state}
-
-    redirect_url = f"{redirect_uri}?{urlencode(redirect_params)}"
+    redirect_url = f"{redirect_uri}?{urlencode({'code': code, 'state': state})}"
     logger.info(
         "Authorization code issued for client %s, user %s",
         client_id,
@@ -175,152 +174,165 @@ def handle_authorize_confirm(
 
 
 def handle_authorization_code(
-    config: ServerConfig,
     client_id: str,
     client_secret: str,
     code: str | None,
     redirect_uri: str | None,
     code_verifier: str | None,
+    client_repo: ClientRepository,
+    token_repo: TokenRepository,
 ) -> dict[
     Literal["access_token", "token_type", "expires_in", "refresh_token", "scope"],
     str | int,
 ]:
-    """Handle the authorization_code grant type with PKCE validation."""
+    """Handle the authorization_code grant type with PKCE validation.
+
+    After authenticating the client, the client proves it initiated the
+    authorization request by presenting the authorization code and the
+    code_verifier whose SHA-256 hash matches the stored code_challenge.
+
+    Args:
+        client_id: OAuth client identifier.
+        client_secret: Client secret for authentication.
+        code: The authorization code issued by /authorize.
+        redirect_uri: Must match the redirect_uri used when the code was issued.
+        code_verifier: Raw random string whose base64url(SHA-256) must equal the stored code_challenge.
+        client_repo: Client persistence operations.
+        token_repo: Token persistence and issuance operations.
+
+    Returns:
+        OAuth token response containing access_token, token_type, expires_in,
+        refresh_token, and optionally scope.
+    """
     if not code:
         raise InvalidRequestException("Missing authorization code")
     if not code_verifier:
         raise InvalidRequestException("Missing PKCE code_verifier")
 
-    client = get_client(config.db_path, client_id)
-    if not client:
+    client = client_repo.get(client_id)
+    if client is None:
         raise InvalidClientException("Client not found")
-
     if not client.verify_client_secret(client_secret):
         raise InvalidClientException("Client authentication failed")
 
-    auth_code = consume_authorization_code(config.db_path, code)
-    if not auth_code:
+    auth_code = token_repo.consume_authorization_code(code)
+    if auth_code is None:
         raise InvalidGrantException("Invalid or expired authorization code")
-
     if auth_code.client_id != client_id:
         raise InvalidGrantException("Client ID mismatch")
-
     if auth_code.redirect_uri and auth_code.redirect_uri != redirect_uri:
         raise InvalidGrantException("Redirect URI mismatch")
-
     if not auth_code.code_challenge or not _verify_pkce(
         code_verifier, auth_code.code_challenge, auth_code.code_challenge_method
     ):
         raise InvalidGrantException("PKCE code_verifier validation failed")
 
+    user_id = auth_code.user_id
+    auth_code_audience = auth_code.audience
     scopes = auth_code.scope.split() if auth_code.scope else None
-
-    access_token = create_access_token_for_client(
-        config,
-        client,
-        scopes=scopes,
-        audience=auth_code.audience,
-        subject=auth_code.user_id,
-    )
-    refresh_token = create_refresh_token_for_client(
-        config=config,
+    access_token = token_repo.issue_access_token(
         client=client,
-        user_id=auth_code.user_id,
+        subject=user_id,
         scopes=scopes,
-        audience=auth_code.audience,
+        audience=auth_code_audience,
+    )
+    refresh_token = token_repo.issue_refresh_token(
+        client=client,
+        user_id=user_id,
+        scopes=scopes,
+        audience=auth_code_audience,
     )
 
-    touch_client_last_used(config.db_path, client_id)
-    prune_authorization_codes(config.db_path)
-    prune_refresh_tokens(config.db_path)
+    client_repo.touch_last_used(client_id)
+    token_repo.prune_authorization_codes()
+    token_repo.prune_refresh_tokens()
     logger.info(
         "Issued token via authorization_code for client: %s, user: %s",
         client_id,
-        auth_code.user_id,
+        user_id,
     )
-
     return {
         "access_token": access_token,
         "token_type": "Bearer",
-        "expires_in": config.token_expires_in,
+        "expires_in": token_repo.token_expires_in,
         "refresh_token": refresh_token,
         **({"scope": " ".join(scopes)} if scopes else {}),
     }
 
 
 def handle_refresh_token(
-    config: ServerConfig,
     client_id: str,
     client_secret: str,
     refresh_token: str | None,
+    client_repo: ClientRepository,
+    token_repo: TokenRepository,
 ) -> dict[
     Literal["access_token", "token_type", "expires_in", "refresh_token", "scope"],
     str | int,
 ]:
     """Handle the refresh_token grant type.
 
+    Consumes the presented refresh token and issues a fresh access token and a new refresh token.
+
     Args:
-        config: Server configuration.
-        client_id: Client identifier.
-        client_secret: Client secret used for authentication.
-        refresh_token: Opaque refresh token presented by the client.
+        client_id: ID of the client that the refresh token belongs to.
+        client_secret: Secret value to authenticate the client.
+        refresh_token: The opaque refresh token to exchange.
+        client_repo: Client persistence operations.
+        token_repo: Token persistence and issuance operations.
 
     Returns:
-        OAuth token response payload.
+        OAuth token response containing access_token, token_type, expires_in,
+        refresh_token, and optionally scope.
 
     Raises:
-        InvalidRequestException: If the refresh token parameter is missing.
+        InvalidRequestException: If refresh_token parameter is missing.
         InvalidClientException: If client authentication fails.
-        InvalidGrantException: If the refresh token is invalid, expired, or bound
-            to another client.
+        InvalidGrantException: If the refresh token is invalid, expired, or
+            bound to a different client.
     """
     if not refresh_token:
         raise InvalidRequestException("Missing refresh_token")
 
-    client = get_client(config.db_path, client_id)
-    if not client:
+    client = client_repo.get(client_id)
+    if client is None:
         raise InvalidClientException("Client not found")
-
     if not client.verify_client_secret(client_secret):
         raise InvalidClientException("Client authentication failed")
 
-    persisted_refresh_token = consume_refresh_token(config.db_path, refresh_token)
-    if not persisted_refresh_token:
+    persisted_refresh_token = token_repo.consume_refresh_token(refresh_token)
+    if persisted_refresh_token is None:
         raise InvalidGrantException("Invalid or expired refresh token")
-
     if persisted_refresh_token.client_id != client_id:
         raise InvalidGrantException("Invalid or expired refresh token")
 
     scopes = (
         persisted_refresh_token.scope.split() if persisted_refresh_token.scope else None
     )
-    access_token = create_access_token_for_client(
-        config=config,
+    access_token = token_repo.issue_access_token(
         client=client,
+        subject=persisted_refresh_token.user_id,
         scopes=scopes,
         audience=persisted_refresh_token.audience,
-        subject=persisted_refresh_token.user_id,
     )
-    rotated_refresh_token = create_refresh_token_for_client(
-        config=config,
+    rotated_refresh_token = token_repo.issue_refresh_token(
         client=client,
         user_id=persisted_refresh_token.user_id,
         scopes=scopes,
         audience=persisted_refresh_token.audience,
     )
 
-    touch_client_last_used(config.db_path, client_id)
-    prune_refresh_tokens(config.db_path)
+    client_repo.touch_last_used(client_id)
+    token_repo.prune_refresh_tokens()
     logger.info(
         "Issued token via refresh_token for client: %s, user: %s",
         client_id,
         persisted_refresh_token.user_id,
     )
-
     return {
         "access_token": access_token,
         "token_type": "Bearer",
-        "expires_in": config.token_expires_in,
+        "expires_in": token_repo.token_expires_in,
         "refresh_token": rotated_refresh_token,
         **({"scope": " ".join(scopes)} if scopes else {}),
     }

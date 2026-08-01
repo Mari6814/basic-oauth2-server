@@ -1,7 +1,5 @@
 """Command-line interface for basic-oauth2-server."""
 
-from __future__ import annotations
-
 import argparse
 import base64
 from datetime import datetime, timezone
@@ -14,16 +12,11 @@ import uuid
 from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
 from .db import (
-    create_client,
-    list_clients,
-    delete_client,
-    create_user,
-    delete_user,
-    get_user,
-    list_users,
-    update_user_password,
-    get_client,
-    prune_authorization_codes,
+    ClientRepository,
+    TokenRepository,
+    UserRepository,
+    database,
+    init_db,
 )
 from basic_oauth2_server.jwt import get_algorithm, is_symmetric
 from basic_oauth2_server.utils import decode_prefixed_utf8
@@ -31,7 +24,10 @@ from basic_oauth2_server.config import AdminConfig, ServerConfig, ensure_app_key
 
 
 def main(args: list[str] | None = None) -> int:
-    """Main entry point for the CLI."""
+    """Main entry point for the CLI.
+
+    TODO: Even though I don't think its too bad, maybe we should switch to click or something that allows us to properly scope params of each operation together for more clarity.
+    """
     parser = argparse.ArgumentParser(
         prog="basic-oauth2-server",
         description="Basic OAuth 2.0 Authorization Server",
@@ -357,9 +353,7 @@ def main(args: list[str] | None = None) -> int:
 def _ensure_default_client(args: argparse.Namespace) -> None:
     """Create the default OAuth client if it does not already exist."""
     client_id = args.default_client_id
-    if get_client(args.db, client_id) is not None:
-        print(f"Default client '{client_id}' already exists, skipping.")
-        return
+    init_db(args.db)
 
     algorithm = get_algorithm(args.default_client_algorithm or "HS256")
 
@@ -406,16 +400,21 @@ def _ensure_default_client(args: argparse.Namespace) -> None:
     if args.default_client_redirect_uris is not None:
         redirect_uris = list(args.default_client_redirect_uris)
 
-    create_client(
-        db_path=args.db,
-        client_id=client_id,
-        client_secret=client_secret_raw,
-        algorithm=algorithm,
-        signing_secret=signing_secret_raw,
-        scopes=scopes,
-        audiences=audiences,
-        redirect_uris=redirect_uris,
-    )
+    with database.connect() as db:
+        client_repo = ClientRepository(db)
+        if client_repo.get(client_id) is not None:
+            print(f"Default client '{client_id}' already exists, skipping.")
+            return
+        client_repo.create(
+            client_id=client_id,
+            client_secret=client_secret_raw,
+            algorithm=algorithm,
+            signing_secret=signing_secret_raw,
+            scopes=scopes,
+            audiences=audiences,
+            redirect_uris=redirect_uris,
+            title=None,
+        )
 
     print(f"Created default client '{client_id}'")
     if generated_secret:
@@ -434,13 +433,15 @@ def _ensure_default_user(args: argparse.Namespace) -> None:
         f"Password for default user '{username}': "
     )
 
-    existing = get_user(args.db, username)
-    if existing is None:
-        create_user(args.db, username, password)
-        print(f"Created default user '{username}'")
-    else:
-        update_user_password(args.db, username, password)
-        print(f"Updated default user '{username}'")
+    init_db(args.db)
+    with database.connect() as db:
+        user_repo = UserRepository(db)
+        if user_repo.get(username) is None:
+            user_repo.create(username, password)
+            print(f"Created default user '{username}'")
+        else:
+            user_repo.update_password(username, password)
+            print(f"Updated default user '{username}'")
 
 
 def _normalize_key_path(value: str | None) -> str | None:
@@ -465,6 +466,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     """Handle the 'serve' command."""
     from basic_oauth2_server.server import run_server
 
+    # TODO: ServerConfig.from_env not being used...
     config = ServerConfig(
         host=args.host,
         port=args.port,
@@ -558,17 +560,18 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
     audiences = args.audiences or []
     redirect_uris = args.redirect_uris or []
 
-    client = create_client(
-        db_path=args.db,
-        client_id=args.client_id or str(uuid.uuid4()),
-        client_secret=client_secret,
-        algorithm=algorithm,
-        signing_secret=signing_secret,
-        scopes=scopes,
-        audiences=audiences,
-        redirect_uris=redirect_uris,
-        title=args.title,
-    )
+    init_db(args.db)
+    with database.connect() as db:
+        client = ClientRepository(db).create(
+            client_id=args.client_id or str(uuid.uuid4()),
+            client_secret=client_secret,
+            algorithm=algorithm,
+            signing_secret=signing_secret,
+            scopes=scopes,
+            audiences=audiences,
+            redirect_uris=redirect_uris,
+            title=args.title,
+        )
 
     print(f"OAUTH_CLIENT_ID={client.client_id}")
     if not args.client_secret and client_secret:
@@ -584,7 +587,9 @@ def _cmd_clients_create(args: ClientCreateArgs) -> int:
 
 def _cmd_clients_list(args: argparse.Namespace) -> int:
     """Handle 'clients list' command."""
-    clients = list_clients(args.db)
+    init_db(args.db)
+    with database.connect() as db:
+        clients = ClientRepository(db).list()
 
     if not clients:
         print("No clients found.")
@@ -612,12 +617,14 @@ def _cmd_clients_list(args: argparse.Namespace) -> int:
 
 def _cmd_clients_delete(args: argparse.Namespace) -> int:
     """Handle 'clients delete' command."""
-    if delete_client(args.db, args.client_id):
+    init_db(args.db)
+    with database.connect() as db:
+        deleted = ClientRepository(db).delete(args.client_id)
+    if deleted:
         print(f"Deleted client '{args.client_id}'")
         return 0
-    else:
-        print(f"Error: Client '{args.client_id}' not found", file=sys.stderr)
-        return 1
+    print(f"Error: Client '{args.client_id}' not found", file=sys.stderr)
+    return 1
 
 
 def _cmd_users(args: argparse.Namespace) -> int:
@@ -640,18 +647,23 @@ def _cmd_users(args: argparse.Namespace) -> int:
 
 def _cmd_users_create(args: argparse.Namespace) -> int:
     """Handle 'users create' command."""
-    if get_user(args.db, args.username) is not None:
-        print(f"Error: User '{args.username}' already exists", file=sys.stderr)
-        return 1
+    init_db(args.db)
     password = args.password or getpass.getpass("Password: ")
-    create_user(args.db, args.username, password)
+    with database.connect() as db:
+        user_repo = UserRepository(db)
+        if user_repo.get(args.username) is not None:
+            print(f"Error: User '{args.username}' already exists", file=sys.stderr)
+            return 1
+        user_repo.create(args.username, password)
     print(f"Created user '{args.username}'")
     return 0
 
 
 def _cmd_users_list(args: argparse.Namespace) -> int:
     """Handle 'users list' command."""
-    users = list_users(args.db)
+    init_db(args.db)
+    with database.connect() as db:
+        users = UserRepository(db).list()
     if not users:
         print("No users found.")
         return 0
@@ -667,7 +679,10 @@ def _cmd_users_list(args: argparse.Namespace) -> int:
 
 def _cmd_users_delete(args: argparse.Namespace) -> int:
     """Handle 'users delete' command."""
-    if delete_user(args.db, args.username):
+    init_db(args.db)
+    with database.connect() as db:
+        deleted = UserRepository(db).delete(args.username)
+    if deleted:
         print(f"Deleted user '{args.username}'")
         return 0
     print(f"Error: User '{args.username}' not found", file=sys.stderr)
@@ -677,7 +692,10 @@ def _cmd_users_delete(args: argparse.Namespace) -> int:
 def _cmd_users_update_password(args: argparse.Namespace) -> int:
     """Handle 'users update-password' command."""
     password = args.password or getpass.getpass("New password: ")
-    if update_user_password(args.db, args.username, password):
+    init_db(args.db)
+    with database.connect() as db:
+        updated = UserRepository(db).update_password(args.username, password)
+    if updated:
         print(f"Updated password for user '{args.username}'")
         return 0
     print(f"Error: User '{args.username}' not found", file=sys.stderr)
@@ -685,13 +703,20 @@ def _cmd_users_update_password(args: argparse.Namespace) -> int:
 
 
 def _cmd_auth_codes(args: argparse.Namespace) -> int:
-    """Handle the 'auth-codes' command."""
+    """Handle the 'auth-codes' command.
+
+    TODO: Now that we also have refresh tokens, we should merge auth code and refresh pruning into one `prune` command. And also check codebase for actively called prune behaviors. We should not do that and instead always require a cronjob to call `prune` that prunes all prunables.
+    """
     if not args.auth_codes_command:
         print("Usage: basic-oauth2-server auth-codes {prune}")
         return 1
 
     if args.auth_codes_command == "prune":
-        deleted = prune_authorization_codes(args.db)
+        init_db(args.db)
+        with database.connect() as db:
+            deleted = TokenRepository(
+                db, ServerConfig(db_path=args.db)
+            ).prune_authorization_codes()
         noun = "row" if deleted == 1 else "rows"
         print(f"Pruned {deleted} authorization code {noun}.")
         return 0
@@ -738,6 +763,7 @@ def _cmd_admin(args: argparse.Namespace) -> int:
         print(
             f"Starting admin dashboard on {config.host}:{config.port} (no authentication — keep bound to localhost)"
         )
+    init_db(args.db)
     run_admin(config)
     return 0
 

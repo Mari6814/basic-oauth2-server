@@ -4,45 +4,37 @@ import base64
 import secrets
 import uuid
 
-from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 import gradio as gr
+from jws_algorithms import AsymmetricAlgorithm, SymmetricAlgorithm
 
-from .utils import decode_prefixed_utf8
-from .config import ensure_app_key, AdminConfig
-from .db import (
-    create_client,
-    delete_client,
-    get_client,
-    list_clients,
-    create_user,
-    delete_user,
-    get_user,
-    list_users,
-    update_user_password,
-)
+from .config import AdminConfig, ensure_app_key
+from .db import ClientRepository, UserRepository, database, init_db
 from .jwt import get_algorithm, is_symmetric
+from .utils import decode_prefixed_utf8
 
 
 def create_admin_app(config: AdminConfig) -> gr.Blocks:
     """Create the Gradio admin application."""
+    init_db(config.db_path)
 
     def refresh_clients() -> list[list[str]]:
         """Refresh the clients table."""
-        clients = list_clients(config.db_path)
+        with database.connect() as db:
+            clients = ClientRepository(db).list()
         return [
             [
-                c.client_id,
-                c.title or "",
-                c.algorithm,
-                c.scopes or "",
-                c.redirect_uris or "",
+                client.client_id,
+                client.title or "",
+                client.algorithm,
+                client.scopes or "",
+                client.redirect_uris or "",
                 (
-                    c.last_used_at.strftime("%Y-%m-%d %H:%M")
-                    if c.last_used_at
+                    client.last_used_at.strftime("%Y-%m-%d %H:%M")
+                    if client.last_used_at
                     else "never used"
                 ),
             ]
-            for c in clients
+            for client in clients
         ]
 
     def add_client(
@@ -56,19 +48,16 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         redirect_uris: str,
     ) -> tuple[str, list[list[str]]]:
         """Add a new client."""
-
         if not client_id:
             raise ValueError("Client ID is required")
-
         if not client_secret:
             raise ValueError("Client secret is required")
+        if not algorithm:
+            raise ValueError("Algorithm is required")
 
         client_secret_bytes = decode_prefixed_utf8(client_secret)
         if not client_secret_bytes:
             raise ValueError("Client secret bytes cannot be empty")
-
-        if not algorithm:
-            raise ValueError("Algorithm is required")
 
         algorithm_enum = get_algorithm(algorithm)
         if is_symmetric(algorithm_enum) and not signing_secret:
@@ -78,71 +67,72 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
         if signing_secret:
             signing_secret_bytes = decode_prefixed_utf8(signing_secret)
 
-        existing = get_client(config.db_path, client_id)
-        if existing:
-            return f"Error: Client '{client_id}' already exists", refresh_clients()
+        scopes_list = [
+            scope.strip() for scope in scopes.split(",") if scope.strip()
+        ] or None
+        audiences_list = [
+            audience.strip() for audience in audiences.split(",") if audience.strip()
+        ] or None
+        redirect_uris_list = [
+            uri.strip() for uri in redirect_uris.splitlines() if uri.strip()
+        ] or None
 
         try:
-            scopes_list = [s.strip() for s in scopes.split(",") if s.strip()] or None
-            audiences_list = [
-                a.strip() for a in audiences.split(",") if a.strip()
-            ] or None
-            redirect_uris_list = [
-                r.strip() for r in redirect_uris.splitlines() if r.strip()
-            ] or None
-
-            _client = create_client(
-                db_path=config.db_path,
-                client_id=client_id,
-                client_secret=client_secret_bytes,
-                algorithm=algorithm_enum,
-                signing_secret=signing_secret_bytes,
-                scopes=scopes_list,
-                audiences=audiences_list,
-                redirect_uris=redirect_uris_list,
-                title=title or None,
-            )
-
-            # Convert to base64 for example usage below. Reason: OAuth2 clients typically need to send the secret base64-encoded.
-            client_secret_base64 = base64.b64encode(client_secret_bytes).decode()
-
-            msg = "\n".join(
-                [
-                    "Environment variables to use this client:",
-                    "",
-                    f"OAUTH_CLIENT_ID={client_id}",
-                    f"OAUTH_CLIENT_SECRET={client_secret_base64}",
-                ]
-                + (
-                    [
-                        f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
-                        f"JWT_ALGORITHM={algorithm_enum.name}",
-                    ]
-                    if is_symmetric(algorithm_enum) and signing_secret_bytes
-                    else []
+            with database.connect() as db:
+                client_repo = ClientRepository(db)
+                if client_repo.get(client_id) is not None:
+                    return (
+                        f"Error: Client '{client_id}' already exists",
+                        refresh_clients(),
+                    )
+                client_repo.create(
+                    client_id=client_id,
+                    client_secret=client_secret_bytes,
+                    algorithm=algorithm_enum,
+                    signing_secret=signing_secret_bytes,
+                    scopes=scopes_list,
+                    audiences=audiences_list,
+                    redirect_uris=redirect_uris_list,
+                    title=title or None,
                 )
-                + [
-                    "",
-                    "Example curl command:",
-                    "",
-                    f"curl {config.app_url or 'APP_URL'}/oauth2/token \\\n"
-                    f'\t-u "{client_id}:{client_secret_base64}" \\\n'
-                    f'\t-d "grant_type=client_credentials"',
-                ],
+        except Exception as exc:
+            return f"Error: {exc}", refresh_clients()
+
+        client_secret_base64 = base64.b64encode(client_secret_bytes).decode()
+        # TODO: Emit messages with more information on how to use these. Also provide cli options to create or update an .env file.
+        message = "\n".join(
+            [
+                "Environment variables to use this client:",
+                "",
+                f"OAUTH_CLIENT_ID={client_id}",
+                f"OAUTH_CLIENT_SECRET={client_secret_base64}",
+            ]
+            + (
+                [
+                    f"JWT_SECRET=base64:{base64.b64encode(signing_secret_bytes).decode()}",
+                    f"JWT_ALGORITHM={algorithm_enum.name}",
+                ]
+                if is_symmetric(algorithm_enum) and signing_secret_bytes
+                else []
             )
-            return msg, refresh_clients()
-        except Exception as e:
-            return f"Error: {e}", refresh_clients()
+            + [
+                "",
+                "Example curl command:",
+                "",
+                f'curl {config.app_url or "APP_URL"}/oauth2/token \\\n\t-u "{client_id}:{client_secret_base64}" \\\n\t-d "grant_type=client_credentials"',
+            ]
+        )
+        return message, refresh_clients()
 
     def remove_client(client_id: str) -> tuple[str, list[list[str]]]:
         """Delete a client."""
         if not client_id:
             return "Error: Client ID is required", refresh_clients()
-
-        if delete_client(config.db_path, client_id):
+        with database.connect() as db:
+            deleted = ClientRepository(db).delete(client_id)
+        if deleted:
             return f"Deleted client '{client_id}'", refresh_clients()
-        else:
-            return f"Error: Client '{client_id}' not found", refresh_clients()
+        return f"Error: Client '{client_id}' not found", refresh_clients()
 
     def generate_signing_secret() -> str:
         """Generate a new random signing secret."""
@@ -150,14 +140,15 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
 
     def refresh_users() -> list[list[str]]:
         """Refresh the users table."""
-        users = list_users(config.db_path)
+        with database.connect() as db:
+            users = UserRepository(db).list()
         return [
             [
-                u.username,
-                u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "",
-                u.updated_at.strftime("%Y-%m-%d %H:%M") if u.updated_at else "",
+                user.username,
+                user.created_at.strftime("%Y-%m-%d %H:%M") if user.created_at else "",
+                user.updated_at.strftime("%Y-%m-%d %H:%M") if user.updated_at else "",
             ]
-            for u in users
+            for user in users
         ]
 
     def add_user(username: str, password: str) -> tuple[str, list[list[str]]]:
@@ -166,26 +157,25 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             return "Error: Username is required", refresh_users()
         if not password:
             return "Error: Password is required", refresh_users()
-
-        existing = get_user(config.db_path, username)
-        if existing:
-            return f"Error: User '{username}' already exists", refresh_users()
-
         try:
-            create_user(config.db_path, username, password)
-            return f"Created user '{username}'", refresh_users()
-        except Exception as e:
-            return f"Error: {e}", refresh_users()
+            with database.connect() as db:
+                user_repo = UserRepository(db)
+                if user_repo.get(username) is not None:
+                    return f"Error: User '{username}' already exists", refresh_users()
+                user_repo.create(username, password)
+        except Exception as exc:
+            return f"Error: {exc}", refresh_users()
+        return f"Created user '{username}'", refresh_users()
 
     def remove_user(username: str) -> tuple[str, list[list[str]]]:
         """Delete a user."""
         if not username:
             return "Error: Username is required", refresh_users()
-
-        if delete_user(config.db_path, username):
+        with database.connect() as db:
+            deleted = UserRepository(db).delete(username)
+        if deleted:
             return f"Deleted user '{username}'", refresh_users()
-        else:
-            return f"Error: User '{username}' not found", refresh_users()
+        return f"Error: User '{username}' not found", refresh_users()
 
     def change_user_password(
         username: str, password: str
@@ -195,11 +185,11 @@ def create_admin_app(config: AdminConfig) -> gr.Blocks:
             return "Error: Username is required", refresh_users()
         if not password:
             return "Error: New password is required", refresh_users()
-
-        if update_user_password(config.db_path, username, password):
+        with database.connect() as db:
+            updated = UserRepository(db).update_password(username, password)
+        if updated:
             return f"Updated password for user '{username}'", refresh_users()
-        else:
-            return f"Error: User '{username}' not found", refresh_users()
+        return f"Error: User '{username}' not found", refresh_users()
 
     with gr.Blocks(title="OAuth Admin Dashboard") as app:
         gr.Markdown("# OAuth Admin Dashboard")

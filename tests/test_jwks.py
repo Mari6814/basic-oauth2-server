@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
 from fastapi.testclient import TestClient
 
 from basic_oauth2_server.config import ServerConfig
-from basic_oauth2_server.db import init_db
+from basic_oauth2_server.db import database, init_db
 from basic_oauth2_server.jwks import build_jwks
 from basic_oauth2_server.server import create_app
 
@@ -33,6 +33,7 @@ def temp_db(tmp_path: Path) -> Generator[str, None, None]:
     os.environ["APP_KEY"] = "test-app-key-1234567890_padded!!"
     init_db(str(db_path))
     yield str(db_path)
+    database.reset()
 
 
 @pytest.fixture
@@ -82,6 +83,7 @@ class TestBuildJwks:
         config = ServerConfig(
             rsa_private_key=_pem(rsa_key),
             rsa_key_id="my-rsa-key",
+            db_path=temp_db,
         )
         result = build_jwks(config)
         assert result["keys"][0]["kid"] == "my-rsa-key"
@@ -138,6 +140,7 @@ class TestBuildJwks:
             ec_p256_key_id="ec-1",
             eddsa_private_key=_pem(eddsa_key),
             eddsa_key_id="eddsa-1",
+            db_path=temp_db,
         )
         result = build_jwks(config)
         assert len(result["keys"]) == 3

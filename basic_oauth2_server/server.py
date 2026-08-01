@@ -1,12 +1,12 @@
 """FastAPI OAuth server implementation."""
 
 import logging
-import time
+from collections.abc import Generator
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
 from cryptography.hazmat.primitives import serialization
-from fastapi import FastAPI, Form, Depends, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from jws_algorithms import SymmetricAlgorithm
@@ -14,9 +14,11 @@ from jws_algorithms import SymmetricAlgorithm
 from basic_oauth2_server.config import ServerConfig
 from basic_oauth2_server.db import (
     Client,
-    delete_refresh_token,
-    get_client,
-    get_user,
+    ClientRepository,
+    DbSession,
+    TokenRepository,
+    UserRepository,
+    database,
     init_db,
 )
 from basic_oauth2_server.exceptions import (
@@ -27,33 +29,66 @@ from basic_oauth2_server.exceptions import (
     OAuth2Exception,
 )
 from basic_oauth2_server.jwks import build_jwks
-from basic_oauth2_server.middleware import (
-    RateLimitMiddleware,
-    TokenCacheControlMiddleware,
-)
 from basic_oauth2_server.jwt import (
     decode_jwt_without_verification,
     get_algorithm,
     verify_jwt,
 )
-from .consent_token import (
-    verify_consent_token,
+from basic_oauth2_server.middleware import (
+    RateLimitMiddleware,
+    TokenCacheControlMiddleware,
 )
-from .client_credentials_grant import handle_client_credentials
+
 from .authorization_code_grant import (
     handle_authorization_code,
     handle_authorize,
     handle_authorize_confirm,
     handle_refresh_token,
 )
+from .client_credentials_grant import handle_client_credentials
+from .consent_token import verify_consent_token
 
 logger = logging.getLogger(__name__)
 
-# auto_error=False so that we can handle the OAuth2 error responses ourselves.
+# TODO: Properly document why this is being used (optional client credentials as they can be provided otherwise as well?)
 token_security = HTTPBasic(auto_error=False)
-
-# For /authorize, where the web frontend does not care about OAuth2 responses, so we do let it auto_error
+# TODO: Docmuent contrast to above one: These were the required client credentials? But what about required username/password for authentication? They should have explicit different HTTPBasic objects.
 authorize_security = HTTPBasic(auto_error=True, realm="OAuth Authorization")
+
+
+def get_db() -> Generator[DbSession, None, None]:
+    """Yield a database session wrapper for the request."""
+    with database.connect() as db:
+        yield db
+
+
+def get_config(request: Request) -> ServerConfig:
+    """Return the current application config."""
+    return request.app.state.config
+
+
+GetDb = Annotated[DbSession, Depends(get_db)]
+ConfigDep = Annotated[ServerConfig, Depends(get_config)]
+
+
+def get_client_repo(db: GetDb) -> ClientRepository:
+    """Build a client repository for the current request."""
+    return ClientRepository(db)
+
+
+def get_user_repo(db: GetDb) -> UserRepository:
+    """Build a user repository for the current request."""
+    return UserRepository(db)
+
+
+def get_token_repo(db: GetDb, config: ConfigDep) -> TokenRepository:
+    """Build a token repository for the current request."""
+    return TokenRepository(db, config)
+
+
+ClientRepo = Annotated[ClientRepository, Depends(get_client_repo)]
+UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
+TokenRepo = Annotated[TokenRepository, Depends(get_token_repo)]
 
 
 def create_app(config: ServerConfig) -> FastAPI:
@@ -61,7 +96,6 @@ def create_app(config: ServerConfig) -> FastAPI:
     app = FastAPI(title="Basic OAuth Server", version="0.1.0")
     app.state.config = config
 
-    # Add middlewares in correct order (rate limit before cache control)
     app.add_middleware(TokenCacheControlMiddleware)
     app.add_middleware(RateLimitMiddleware, trust_proxy=config.trust_proxy)
     init_db(config.db_path)
@@ -97,7 +131,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     @app.exception_handler(OAuth2Exception)
     async def oauth_exception_handler(
-        request: Request, exc: OAuth2Exception
+        _request: Request, exc: OAuth2Exception
     ) -> JSONResponse:
         if exc.status_code not in [401, 403]:
             logger.warning(
@@ -112,7 +146,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     @app.exception_handler(AuthorizationRedirectException)
     async def authorization_redirect_handler(
-        request: Request, exc: AuthorizationRedirectException
+        _request: Request, exc: AuthorizationRedirectException
     ) -> RedirectResponse:
         params = {"error": exc.error, "error_description": exc.description}
         if exc.state:
@@ -124,7 +158,7 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     @app.exception_handler(Exception)
     async def generic_exception_handler(
-        request: Request, exc: Exception
+        _request: Request, exc: Exception
     ) -> JSONResponse:
         logger.error("Unexpected error: %s", exc)
         return _render_oauth_error(
@@ -149,30 +183,19 @@ def create_app(config: ServerConfig) -> FastAPI:
         code_challenge: Annotated[str, Query()],
         state: Annotated[str, Query()],
         user: Annotated[HTTPBasicCredentials, Depends(authorize_security)],
+        app_config: ConfigDep,
+        user_repo: UserRepo,
+        client_repo: ClientRepo,
         code_challenge_method: Annotated[str, Query()] = "S256",
         scope: Annotated[str | None, Query()] = None,
         audience: Annotated[str | None, Query()] = None,
     ) -> JSONResponse:
-        """Authorization endpoint. Requires HTTP Basic Auth.
-
-        Validates the user credentials and the authorization request parameters,
-        then returns a consent page JSON. The consent page contains a confirm_url
-        with a signed JWT that encodes all authorization parameters. The user
-        POSTs only that token to /authorize/confirm to complete the flow.
-        """
-        # TODO (non-standard): This endpoint requires HTTP Basic Auth and returns
-        # JSON instead of rendering an HTML login/consent page and redirecting.
-        # No standardized OAuth client can drive this. The Idea was that I want to
-        # keep it simple and not have a login page with sessions. But maybe its
-        # required to make it work with the standard clients I'm developing this for.
-        # TODO (non-standard): `state` is declared required here. Have to document that this is on purpose and to simplify things, we always require state. I'm pretty sure that
-        # most providers also require it. Might have to read up on how they handle
-        # missing state?
+        """Validate an authorization request and return consent payload."""
         if response_type != "code":
             raise InvalidRequestException("Unsupported response_type")
 
-        db_user = get_user(config.db_path, user.username)
-        if not db_user or not db_user.verify_password(user.password):
+        db_user = user_repo.get(user.username)
+        if db_user is None or not db_user.verify_password(user.password):
             raise HTTPException(
                 status_code=401,
                 detail="Invalid credentials",
@@ -188,14 +211,13 @@ def create_app(config: ServerConfig) -> FastAPI:
             scope=scope.split() if scope else None,
             audience=audience,
             state=state,
-            config=config,
+            config=app_config,
+            client_repo=client_repo,
         )
-
-        base_url = config.app_url or ""
         return JSONResponse(
             content={
                 **consent_data,
-                "confirm_url": f"{base_url}/authorize/confirm",
+                "confirm_url": f"{app_config.app_url}/authorize/confirm",
             }
         )
 
@@ -203,55 +225,44 @@ def create_app(config: ServerConfig) -> FastAPI:
     async def authorize_confirm(
         token: Annotated[str, Form()],
         user: Annotated[HTTPBasicCredentials, Depends(authorize_security)],
+        app_config: ConfigDep,
+        user_repo: UserRepo,
+        token_repo: TokenRepo,
     ) -> RedirectResponse:
-        """Endpoint that marks the received JWT as consented to by the end user.
+        """Create an authorization code from a consent token."""
+        claims = verify_consent_token(token, config=app_config)
 
-        Receives a form POST containing only the signed consent JWT issued by
-        GET /authorize. The token is verified and its claims are used to create
-        the authorization code. Redirects to the redirect_uri with the code.
-        """
-        claims = verify_consent_token(token, config=config)
-
-        username: str = claims.username
-        client_id: str = claims.client_id
-        redirect_uri: str = claims.redirect_uri
-        code_challenge: str = claims.code_challenge
-        code_challenge_method: str = claims.code_challenge_method
-        state: str = claims.state
-        scope_str: str | None = claims.scope
-        audience: str | None = claims.audience
-        jti: str = claims.jti
-
-        db_user = get_user(config.db_path, user.username)
-        if not db_user or not db_user.verify_password(user.password):
+        db_user = user_repo.get(user.username)
+        if db_user is None or not db_user.verify_password(user.password):
             raise HTTPException(
                 status_code=401,
                 detail="Invalid credentials",
                 headers={"WWW-Authenticate": 'Basic realm="OAuth Authorization"'},
             )
-
-        if user.username != username:
+        if user.username != claims.username:
             raise HTTPException(
                 status_code=403,
                 detail="Forbidden: token user does not match authenticated user",
             )
 
         redirect_url = handle_authorize_confirm(
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            code_challenge=code_challenge,
-            code_challenge_method=code_challenge_method,
-            scope=scope_str.split() if scope_str else None,
-            audience=audience,
-            state=state,
-            username=username,
-            config=config,
-            consent_jti=jti,
+            client_id=claims.client_id,
+            redirect_uri=claims.redirect_uri,
+            code_challenge=claims.code_challenge,
+            code_challenge_method=claims.code_challenge_method,
+            scope=claims.scope.split() if claims.scope else None,
+            audience=claims.audience,
+            state=claims.state,
+            username=claims.username,
+            consent_jti=claims.jti,
+            token_repo=token_repo,
         )
         return RedirectResponse(url=redirect_url, status_code=302)
 
     @app.post("/oauth2/token")
     async def token_endpoint(
+        client_repo: ClientRepo,
+        token_repo: TokenRepo,
         grant_type: Annotated[str | None, Form()] = None,
         client_id: Annotated[str | None, Form()] = None,
         client_secret: Annotated[str | None, Form()] = None,
@@ -269,6 +280,13 @@ def create_app(config: ServerConfig) -> FastAPI:
         if not grant_type:
             raise InvalidRequestException("Missing required parameter: grant_type")
 
+        # TODO: client_id and secret are both often passed to these other
+        # methods. This should probably be refactored into a NewType and/or
+        # AuthenticationService that handles the preliminary authentication of
+        # the client. Though, the idea was that the server.py does not handle
+        # anything besides routes, but because handling authentication has
+        # become so common, it probably should be refactored.
+        # Probably some `UnkownClient -> UnauthenticatedClient -> AuthenticatedClient -> Tokens` pipeline?
         effective_client_id = (
             client_credentials.username if client_credentials else client_id
         )
@@ -279,40 +297,44 @@ def create_app(config: ServerConfig) -> FastAPI:
             raise InvalidClientException(
                 "Client authentication failed: missing credentials"
             )
+
         match grant_type:
             case "client_credentials":
-                client_credentials_data = handle_client_credentials(
-                    config=config,
+                token_data = handle_client_credentials(
                     client_id=effective_client_id,
                     client_secret=effective_client_secret,
                     scope=scope,
                     audience=audience,
+                    client_repo=client_repo,
+                    token_repo=token_repo,
                 )
-                return JSONResponse(content=client_credentials_data)
             case "authorization_code":
-                authorization_code_data = handle_authorization_code(
-                    config=config,
+                token_data = handle_authorization_code(
                     client_id=effective_client_id,
                     client_secret=effective_client_secret,
                     code=code,
                     redirect_uri=redirect_uri,
                     code_verifier=code_verifier,
+                    client_repo=client_repo,
+                    token_repo=token_repo,
                 )
-                return JSONResponse(content=authorization_code_data)
             case "refresh_token":
-                refresh_token_data = handle_refresh_token(
-                    config=config,
+                token_data = handle_refresh_token(
                     client_id=effective_client_id,
                     client_secret=effective_client_secret,
                     refresh_token=refresh_token,
+                    client_repo=client_repo,
+                    token_repo=token_repo,
                 )
-                return JSONResponse(content=refresh_token_data)
             case _:
                 raise InvalidGrantException("Unsupported grant_type")
+        return JSONResponse(content=token_data)
 
     @app.post("/oauth2/introspect")
     async def introspect_endpoint(
         token: Annotated[str, Form()],
+        client_repo: ClientRepo,
+        app_config: ConfigDep,
         client_id: Annotated[str | None, Form()] = None,
         client_secret: Annotated[str | None, Form()] = None,
         client_credentials: Annotated[
@@ -321,12 +343,16 @@ def create_app(config: ServerConfig) -> FastAPI:
     ) -> JSONResponse:
         """Inspect the token to return its claims and status."""
         _authenticate_client(
-            config=config,
             client_id=client_id,
             client_secret=client_secret,
             client_credentials=client_credentials,
+            client_repo=client_repo,
         )
-        claims = _get_active_token_claims(config=config, token=token)
+        claims = _get_active_token_claims(
+            config=app_config,
+            token=token,
+            client_repo=client_repo,
+        )
         if claims is None:
             return JSONResponse(content={"active": False})
         return JSONResponse(content={"active": True, **claims})
@@ -334,6 +360,8 @@ def create_app(config: ServerConfig) -> FastAPI:
     @app.post("/oauth2/revoke")
     async def revoke_endpoint(
         token: Annotated[str, Form()],
+        client_repo: ClientRepo,
+        token_repo: TokenRepo,
         token_type_hint: Annotated[str | None, Form()] = None,
         client_id: Annotated[str | None, Form()] = None,
         client_secret: Annotated[str | None, Form()] = None,
@@ -341,12 +369,12 @@ def create_app(config: ServerConfig) -> FastAPI:
             HTTPBasicCredentials | None, Depends(token_security)
         ] = None,
     ) -> JSONResponse:
-        """Revoke a refresh token according to RFC 7009."""
+        """Revoke a refresh token."""
         _authenticate_client(
-            config=config,
             client_id=client_id,
             client_secret=client_secret,
             client_credentials=client_credentials,
+            client_repo=client_repo,
         )
         if token_type_hint is not None and token_type_hint != "refresh_token":
             raise OAuth2Exception(
@@ -355,7 +383,7 @@ def create_app(config: ServerConfig) -> FastAPI:
                 400,
             )
 
-        delete_refresh_token(config.db_path, token)
+        token_repo.delete_refresh_token(token)
         return JSONResponse(content={})
 
     return app
@@ -380,10 +408,10 @@ def run_server(config: ServerConfig) -> None:  # pragma: no cover
 
 
 def _authenticate_client(
-    config: ServerConfig,
     client_id: str | None,
     client_secret: str | None,
     client_credentials: HTTPBasicCredentials | None,
+    client_repo: ClientRepository,
 ) -> Client:
     """Authenticate a client using HTTP Basic auth or form credentials."""
     effective_client_id = (
@@ -397,13 +425,17 @@ def _authenticate_client(
             "Client authentication failed: missing credentials"
         )
 
-    client = get_client(config.db_path, effective_client_id)
-    if not client or not client.verify_client_secret(effective_client_secret):
+    client = client_repo.get(effective_client_id)
+    if client is None or not client.verify_client_secret(effective_client_secret):
         raise InvalidClientException("Client authentication failed")
     return client
 
 
-def _get_active_token_claims(config: ServerConfig, token: str) -> dict[str, Any] | None:
+def _get_active_token_claims(
+    config: ServerConfig,
+    token: str,
+    client_repo: ClientRepository,
+) -> dict[str, Any] | None:
     """Return verified claims for an active token, or None when inactive."""
     decoded_token = decode_jwt_without_verification(token)
     if decoded_token is None:
@@ -415,20 +447,25 @@ def _get_active_token_claims(config: ServerConfig, token: str) -> dict[str, Any]
     if not isinstance(algorithm_name, str) or not isinstance(token_client_id, str):
         return None
 
-    client = get_client(config.db_path, token_client_id)
-    if not client or client.algorithm != algorithm_name:
+    client = client_repo.get(token_client_id)
+    if client is None or client.algorithm != algorithm_name:
         return None
 
     try:
         algorithm = get_algorithm(client.algorithm)
     except ValueError:
         return None
+
     if isinstance(algorithm, SymmetricAlgorithm):
         signing_secret = client.get_signing_secret()
         if signing_secret is None:
             return None
         verified_claims = verify_jwt(
-            token, algorithm=algorithm, secret=signing_secret, public_key=None
+            token,
+            algorithm=algorithm,
+            secret=signing_secret,
+            public_key=None,
+            issuer=config.app_url,
         )
     else:
         try:
@@ -437,11 +474,12 @@ def _get_active_token_claims(config: ServerConfig, token: str) -> dict[str, Any]
         except Exception:
             return None
         verified_claims = verify_jwt(
-            token, algorithm=algorithm, secret=None, public_key=public_key
+            token,
+            algorithm=algorithm,
+            secret=None,
+            public_key=public_key,
+            issuer=config.app_url,
         )
-
-    if verified_claims is None:
-        return None
 
     return verified_claims
 

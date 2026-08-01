@@ -95,7 +95,11 @@ def verify_jwt(
 
     header, claims, signing_input, signature = parsed_token
     if header.get("alg") != algorithm.name:
-        logger.debug("verify_jwt: algorithm mismatch (token=%s, expected=%s)", header.get("alg"), algorithm.name)
+        logger.debug(
+            "verify_jwt: algorithm mismatch (token=%s, expected=%s)",
+            header.get("alg"),
+            algorithm.name,
+        )
         return None
 
     try:
@@ -106,8 +110,11 @@ def verify_jwt(
             is_valid = algorithm.verify(secret, signing_input, signature)
         else:
             if public_key is None:
-                logger.debug("verify_jwt: no public key provided for asymmetric algorithm")
+                logger.debug(
+                    "verify_jwt: no public key provided for asymmetric algorithm"
+                )
                 return None
+            # TODO: `public_key` is type `bytes | object` and cannot be passed to `verify`
             is_valid = algorithm.verify(public_key, signing_input, signature)
     except Exception:
         logger.debug("verify_jwt: exception during signature verification")
@@ -139,7 +146,11 @@ def verify_jwt(
         return None
 
     if issuer is not None and claims.get("iss") != issuer:
-        logger.debug("verify_jwt: issuer mismatch (token=%s, expected=%s)", claims.get("iss"), issuer)
+        logger.debug(
+            "verify_jwt: issuer mismatch (token=%s, expected=%s)",
+            claims.get("iss"),
+            issuer,
+        )
         return None
 
     return claims

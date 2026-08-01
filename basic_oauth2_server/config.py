@@ -33,10 +33,12 @@ class ServerConfig:
     port: int = 8080
     db_path: str = "./oauth.db"
     # Used for rate-limiting behind proxy. When enabled, will trust any and all X-Forwarded-For headers. Make sure the header runs behind a proxy.
+    # TODO: I don't think we need this, I think nginx just sets the IP it wants
     trust_proxy: bool = False
     # Issuer URL for JWT 'iss' claim
     app_url: str = "http://localhost:8080"
     # Private keys for asymmetric algorithms (each algorithm family needs its own key)
+    # TODO: These types don't clarify if these are the actual keys or paths to the keys? Maybe we should use NewTypes for key- id, path & loaded key
     rsa_private_key: str | None = None  # For RS256, RS384, RS512, PS256, PS384, PS512
     ec_p256_private_key: str | None = None  # For ES256
     ec_p384_private_key: str | None = None  # For ES384
@@ -49,6 +51,7 @@ class ServerConfig:
     ec_p521_key_id: str | None = None
     eddsa_key_id: str | None = None
     # Token expiry in seconds (default: 3600 = 1 hour)
+    # TODO: These types also don't clarify if seconds or what they are. Need NewTypes for this.
     token_expires_in: int = 3600
     refresh_token_expires_in: int = 2592000
 
